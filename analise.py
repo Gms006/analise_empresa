@@ -1612,10 +1612,19 @@ def gera_top_despesas(df_despesas: pd.DataFrame, top_n: int = 10):
         }])
         return vazio, vazio
 
-    total_desp = df_despesas['valor'].sum()
+    base_desp = df_despesas.copy()
+    if 'item_nome' in base_desp.columns:
+        base_desp = base_desp[~base_desp['item_nome'].apply(is_prolabore_socio)].copy()
+
+    if base_desp.empty:
+        vazio = pd.DataFrame(columns=['rank', 'grupo', 'item_nome', 'valor', 'perc_total_despesas', 'perc_no_grupo'])
+        vazio_admin = pd.DataFrame(columns=['rank', 'item_nome', 'valor', 'perc_no_grupo'])
+        return vazio, vazio_admin
+
+    total_desp = base_desp['valor'].sum()
     base = (
-        df_despesas.groupby(['grupo', 'item_nome'], dropna=False)['valor']
-                   .sum().reset_index()
+        base_desp.groupby(['grupo', 'item_nome'], dropna=False)['valor']
+                 .sum().reset_index()
     )
     base['perc_total_despesas'] = np.where(total_desp > 0, base['valor'] / total_desp * 100, 0.0)
     total_por_grupo = base.groupby('grupo', dropna=False)['valor'].transform('sum')
@@ -1861,53 +1870,135 @@ def gera_dre_simplificada(
     total_retiradas: float,
     abatimento_adv: float
 ) -> pd.DataFrame:
-    """Gera DRE simplificada com margem líquida."""
+    """Gera DRE simplificada com detalhamento de despesas e indicadores percentuais."""
 
-    meses = MESES_ACUMULADOS if MESES_ACUMULADOS else 1
-    if df_receitas.empty or meses == 0:
-        return _empty_df(["linha", "valor_mensal", "perc_receita"])
+    if df_receitas.empty:
+        return _empty_df(["linha", "valor_total", "perc_receita", "perc_resultado_liquido", "observacao"])
 
-    receita_core = df_receitas['receita'].sum()
-    receita_mensal = receita_core / meses if meses else receita_core
+    receita_core = float(df_receitas['receita'].sum())
+    if receita_core == 0:
+        receita_core = 0.0
 
     if df_despesas_rateado.empty:
-        custos_alocados = 0.0
+        df_base = pd.DataFrame(columns=['grupo', 'valor', 'item_nome'])
     else:
-        custos_alocados = df_despesas_rateado['valor'].sum() / meses if meses else df_despesas_rateado['valor'].sum()
+        df_base = df_despesas_rateado.copy()
+        if 'item_nome' not in df_base.columns:
+            df_base['item_nome'] = ""
 
-    margem_liquida = receita_mensal - custos_alocados
-    retirada_mensal = total_retiradas / meses if meses else total_retiradas
-    resultado_ajustado = margem_liquida - retirada_mensal
+    def _valor_grupo(nome: str, excluir_prolab: bool = False) -> float:
+        if df_base.empty:
+            return 0.0
+        mask = df_base['grupo'] == nome
+        if not mask.any():
+            return 0.0
+        serie = df_base.loc[mask, 'valor']
+        if excluir_prolab and 'item_nome' in df_base.columns:
+            itens = df_base.loc[mask, 'item_nome'].astype(str)
+            serie = serie.loc[~itens.apply(is_prolabore_socio)]
+        return float(serie.sum())
+
+    despesas_adm = _valor_grupo('DESPESAS ADMINISTRATIVAS', excluir_prolab=True)
+    despesas_trab = _valor_grupo('DESPESAS TRABALHISTAS')
+    despesas_trib = _valor_grupo('DESPESAS TRIBUTÁRIAS')
+    despesas_fin = _valor_grupo('DESPESAS FINANCEIRAS')
+    despesas_banc = _valor_grupo('DESPESAS BANCÁRIAS')
+
+    margem_liquida = receita_core - (
+        despesas_adm +
+        despesas_trab +
+        despesas_trib +
+        despesas_fin +
+        despesas_banc
+    )
+
+    retirada_total = float(total_retiradas or 0.0)
+    resultado_ajustado = margem_liquida - retirada_total
+
+    abatimento_total = abs(float(abatimento_adv or 0.0))
+    prolabore_total = retirada_total
+
+    observ_adm = []
+    if abatimento_total:
+        observ_adm.append(f"Conta redutora advocacia: R$ {abatimento_total:,.2f}")
+    observ_adm.append(f"Pró-labore tratado como retirada: R$ {prolabore_total:,.2f}")
+
+    perc_receita_safe = lambda valor: (valor / receita_core) if receita_core else 0.0
+    perc_resultado_pl = (retirada_total / margem_liquida) if margem_liquida else 0.0
 
     linhas = [
         {
-            'linha': 'Receita (CORE)',
-            'valor_mensal': receita_mensal,
+            'linha': 'Receita Total (CORE)',
+            'valor_total': receita_core,
             'perc_receita': 1.0,
+            'perc_resultado_liquido': np.nan,
+            'observacao': ''
         },
         {
-            'linha': '(–) Custos Alocados',
-            'valor_mensal': -custos_alocados,
-            'perc_receita': (custos_alocados / receita_mensal) if receita_mensal else 0.0,
+            'linha': '(–) Despesas Administrativas (líquidas)',
+            'valor_total': -despesas_adm,
+            'perc_receita': perc_receita_safe(despesas_adm),
+            'perc_resultado_liquido': np.nan,
+            'observacao': ' | '.join(observ_adm)
+        },
+        {
+            'linha': '(–) Despesas Trabalhistas Rateadas',
+            'valor_total': -despesas_trab,
+            'perc_receita': perc_receita_safe(despesas_trab),
+            'perc_resultado_liquido': np.nan,
+            'observacao': ''
+        },
+        {
+            'linha': '(–) Despesas Tributárias',
+            'valor_total': -despesas_trib,
+            'perc_receita': perc_receita_safe(despesas_trib),
+            'perc_resultado_liquido': np.nan,
+            'observacao': ''
+        },
+        {
+            'linha': '(–) Despesas Financeiras',
+            'valor_total': -despesas_fin,
+            'perc_receita': perc_receita_safe(despesas_fin),
+            'perc_resultado_liquido': np.nan,
+            'observacao': ''
+        },
+        {
+            'linha': '(–) Despesas Bancárias',
+            'valor_total': -despesas_banc,
+            'perc_receita': perc_receita_safe(despesas_banc),
+            'perc_resultado_liquido': np.nan,
+            'observacao': ''
         },
         {
             'linha': '= Margem de Contribuição Líquida',
-            'valor_mensal': margem_liquida,
-            'perc_receita': (margem_liquida / receita_mensal) if receita_mensal else 0.0,
+            'valor_total': margem_liquida,
+            'perc_receita': perc_receita_safe(margem_liquida),
+            'perc_resultado_liquido': 1.0,
+            'observacao': ''
         },
         {
-            'linha': '(–) Retiradas - Pró-labore',
-            'valor_mensal': -retirada_mensal,
-            'perc_receita': (retirada_mensal / receita_mensal) if receita_mensal else 0.0,
+            'linha': '(–) Retiradas - Pró-labore dos Sócios',
+            'valor_total': -retirada_total,
+            'perc_receita': perc_receita_safe(retirada_total),
+            'perc_resultado_liquido': perc_resultado_pl,
+            'observacao': ''
         },
         {
             'linha': '= Resultado Líquido Ajustado',
-            'valor_mensal': resultado_ajustado,
-            'perc_receita': (resultado_ajustado / receita_mensal) if receita_mensal else 0.0,
+            'valor_total': resultado_ajustado,
+            'perc_receita': perc_receita_safe(resultado_ajustado),
+            'perc_resultado_liquido': (resultado_ajustado / margem_liquida) if margem_liquida else 0.0,
+            'observacao': ''
         },
     ]
 
-    dre = pd.DataFrame(linhas, columns=["linha", "valor_mensal", "perc_receita"])
+    dre = pd.DataFrame(linhas, columns=[
+        "linha",
+        "valor_total",
+        "perc_receita",
+        "perc_resultado_liquido",
+        "observacao"
+    ])
     return dre
 
 # ============================================================================

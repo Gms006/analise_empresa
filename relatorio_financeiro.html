@@ -985,11 +985,26 @@
 
     function renderDRE(){
       const dre = applySearch(state.datasets.dre||[]);
-      tableFromData('tabDRE',[
+      const cols = [
         {key:'linha',label:'Linha'},
-        {key:'valor_mensal',label:'Valor Mensal',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'perc_receita',label:'% Receita',right:true,format:v=>PCT.format(asNum(v))}
-      ], dre, {
+        {key:'valor_total',label:'Valor Total',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'perc_receita',label:'% Receita',right:true,format:v=>{
+          const val=asNum(v);
+          return Number.isFinite(val)?PCT.format(val):'—';
+        }}
+      ];
+      const hasPercLucro = dre.some(row=> row && Object.prototype.hasOwnProperty.call(row,'perc_resultado_liquido'));
+      if(hasPercLucro){
+        cols.push({key:'perc_resultado_liquido',label:'% Lucro Líquido',right:true,format:v=>{
+          const val=asNum(v);
+          return Number.isFinite(val)?PCT.format(val):'—';
+        }});
+      }
+      const hasObs = dre.some(row=> row && (row.observacao!==undefined && String(row.observacao||'').trim()!==''));
+      if(hasObs){
+        cols.push({key:'observacao',label:'Observações'});
+      }
+      tableFromData('tabDRE',cols, dre, {
         getRowClass:(row)=>{
           const linha = String(row.linha||'').toLowerCase();
           if(linha.includes('margem') || linha.includes('resultado')) return 'row-highlight';
