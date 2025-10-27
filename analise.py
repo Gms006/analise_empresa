@@ -778,11 +778,18 @@ def carrega_despesas_v2(caminho: Path, log: List[str]) -> pd.DataFrame:
 
         item_nome = str(nome_bruto).strip() if pd.notna(nome_bruto) else ''
         valor = converte_para_numero(valor_bruto)
-        tipo = normaliza_tipo_despesa(tipo_bruto)
 
-        if 'REDUTORA' in item_nome.upper():
+        tipo_normalizado = normaliza_tipo_despesa(tipo_bruto)
+        tipo_bruto_txt = str(tipo_bruto).strip().upper() if pd.notna(tipo_bruto) else ''
+        is_prolabore = 'PRO-LABORE' in item_nome.upper()
+
+        if 'RETIRADA' in tipo_bruto_txt or is_prolabore:
+            tipo = 'DESPESA ADMINISTRATIVA'
+        elif 'REDUTORA' in item_nome.upper():
             tipo = 'DESPESA ADMINISTRATIVA'
             valor = -abs(valor)
+        else:
+            tipo = tipo_normalizado
 
         if item_nome == '' and valor == 0:
             continue
@@ -793,6 +800,7 @@ def carrega_despesas_v2(caminho: Path, log: List[str]) -> pd.DataFrame:
             'item_nome': item_nome,
             'valor': valor,
             'id_linha': idx + 1,
+            'is_prolabore': bool(is_prolabore),
         })
 
     df_norm = pd.DataFrame(registros)
@@ -1324,6 +1332,68 @@ def analise_retirada_socios_completa(
     return df_resumo, df_comparativo
 
 # ============================================================================
+# ANÁLISE DO IMPACTO DOS PRÓ-LABORES
+# ============================================================================
+
+def analise_impacto_retiradas(
+    df_receitas: pd.DataFrame,
+    df_despesas_operacionais: pd.DataFrame,
+    meses: int
+) -> pd.DataFrame:
+    """Analisa o impacto dos pró-labores no resultado e margens da empresa."""
+
+    receita_total = float(df_receitas['receita'].sum())
+    receita_core = float(df_receitas[df_receitas['tipo_receita'] == 'HONORÁRIOS']['receita'].sum())
+
+    despesas_totais = float(df_despesas_operacionais['valor'].sum())
+
+    if 'is_prolabore' in df_despesas_operacionais.columns:
+        mask_prolab = df_despesas_operacionais['is_prolabore'].fillna(False)
+    else:
+        mask_prolab = pd.Series([False] * len(df_despesas_operacionais), index=df_despesas_operacionais.index)
+
+    if df_despesas_operacionais.empty:
+        prolabores_total = 0.0
+    else:
+        prolabores_total = float(df_despesas_operacionais.loc[mask_prolab, 'valor'].sum())
+    despesas_sem_prolabore = despesas_totais - prolabores_total
+
+    resultado_bruto = receita_total - despesas_totais
+    resultado_sem_prolabore = receita_total - despesas_sem_prolabore
+
+    perc_prolabore_sobre_receita_total = (prolabores_total / receita_total * 100) if receita_total else 0.0
+    perc_prolabore_sobre_receita_core = (prolabores_total / receita_core * 100) if receita_core else 0.0
+    perc_prolabore_sobre_despesas = (prolabores_total / despesas_totais * 100) if despesas_totais else 0.0
+    perc_prolabore_sobre_resultado_sem_pl = (
+        (prolabores_total / resultado_sem_prolabore * 100)
+        if resultado_sem_prolabore
+        else np.nan
+    )
+
+    margem_com_prolabore = (resultado_bruto / receita_total * 100) if receita_total else 0.0
+    margem_sem_prolabore = (resultado_sem_prolabore / receita_total * 100) if receita_total else 0.0
+    impacto_margem = margem_sem_prolabore - margem_com_prolabore
+
+    return pd.DataFrame([{
+        'receita_total': receita_total,
+        'receita_core_honorarios': receita_core,
+        'despesas_totais': despesas_totais,
+        'despesas_sem_prolabore': despesas_sem_prolabore,
+        'prolabores_total': prolabores_total,
+        'resultado_bruto_com_prolabore': resultado_bruto,
+        'resultado_hipotetico_sem_prolabore': resultado_sem_prolabore,
+        'perc_prolabore_sobre_receita_total': perc_prolabore_sobre_receita_total,
+        'perc_prolabore_sobre_receita_core': perc_prolabore_sobre_receita_core,
+        'perc_prolabore_sobre_despesas_totais': perc_prolabore_sobre_despesas,
+        'perc_prolabore_sobre_resultado_sem_pl': perc_prolabore_sobre_resultado_sem_pl,
+        'margem_operacional_com_prolabore': margem_com_prolabore,
+        'margem_operacional_sem_prolabore': margem_sem_prolabore,
+        'impacto_margem_percentual': impacto_margem,
+        'meses_analisados': meses,
+        'prolabores_mensal_medio': (prolabores_total / meses) if meses else prolabores_total,
+    }])
+
+# ============================================================================
 # ANÁLISE DE ABSORÇÃO DE CUSTOS
 # ============================================================================
 
@@ -1653,19 +1723,21 @@ def analise_cenarios(
     return df_cenario_otim, df_cenario_pess, df_cenario_reaj, df_cenario_ideal_completo
 
 def gera_top_despesas(df_despesas: pd.DataFrame, top_n: int = 10):
+    """
+    Retorna o ranking geral de despesas excluindo pró-labores para evitar distorções.
+    """
     if df_despesas.empty:
-        vazio = pd.DataFrame([{
-            "rank": 0, "tipo_despesa": "", "item_nome": "Sem dados", "valor": 0.0,
-            "perc_total_despesas": 0.0, "perc_no_tipo": 0.0
-        }])
-        return vazio, vazio
+        return pd.DataFrame(columns=['rank', 'tipo_despesa', 'item_nome', 'valor', 'perc_total_despesas', 'perc_no_tipo'])
 
-    base_desp = df_despesas.copy()
+    if 'is_prolabore' in df_despesas.columns:
+        mask_prolab = df_despesas['is_prolabore'].fillna(False)
+    else:
+        mask_prolab = pd.Series([False] * len(df_despesas), index=df_despesas.index)
+
+    base_desp = df_despesas.loc[~mask_prolab].copy()
 
     if base_desp.empty:
-        vazio = pd.DataFrame(columns=['rank', 'tipo_despesa', 'item_nome', 'valor', 'perc_total_despesas', 'perc_no_tipo'])
-        vazio_admin = pd.DataFrame(columns=['rank', 'item_nome', 'valor', 'perc_no_tipo'])
-        return vazio, vazio_admin
+        return pd.DataFrame(columns=['rank', 'tipo_despesa', 'item_nome', 'valor', 'perc_total_despesas', 'perc_no_tipo'])
 
     total_desp = base_desp['valor'].sum()
     base = (
@@ -1679,13 +1751,7 @@ def gera_top_despesas(df_despesas: pd.DataFrame, top_n: int = 10):
     base = base.sort_values('valor', ascending=False).reset_index(drop=True)
     base['rank'] = range(1, len(base) + 1)
     top_geral = base.head(top_n).copy()
-    top_geral = top_geral[['rank', 'tipo_despesa', 'item_nome', 'valor', 'perc_total_despesas', 'perc_no_tipo']]
-
-    admin = base[base['tipo_despesa'] == 'DESPESA ADMINISTRATIVA'].copy()
-    admin = admin.head(top_n).reset_index(drop=True)
-    admin['rank'] = range(1, len(admin) + 1)
-    top_admin = admin[['rank', 'item_nome', 'valor', 'perc_no_tipo']]
-    return top_geral, top_admin
+    return top_geral[['rank', 'tipo_despesa', 'item_nome', 'valor', 'perc_total_despesas', 'perc_no_tipo']]
 
 # ============================================================================
 # VISÃO ÚNICA DE CUSTO POR ABSORÇÃO (PESO × VOLUME)
@@ -1885,40 +1951,14 @@ def custo_absorcao_por_peso(
     reg, seg = _aplica_visao_com_peso(df_core, df_despesas_rateado, meses, pesos_regime=pesos_regime)
     return reg, seg
 
-# ============================================================================
-# CENÁRIO "SEM PRÓ-LABORE" + % RETIRADA
-# ============================================================================
-
-def remover_prolabores(df_despesas: pd.DataFrame) -> Tuple[pd.DataFrame, float]:
-    """Separa as retiradas dos sócios do restante das despesas."""
-    if df_despesas.empty:
-        return df_despesas.copy(), 0.0
-    mask = df_despesas['tipo_despesa'] == 'RETIRADA'
-    valor_retiradas = df_despesas.loc[mask, 'valor'].sum()
-    return df_despesas.loc[~mask].copy(), float(valor_retiradas)
-
-def percentual_retirada_sobre_resultado(
-    df_receitas_validas: pd.DataFrame,
-    df_desp_sem_prolab: pd.DataFrame,
-    total_retiradas: float
-) -> Tuple[float, float, float]:
-    """Retorna (resultado_liquido_sem_prolab, total_retiradas, percentual)."""
-    receitas_totais_validas = df_receitas_validas['receita'].sum()
-    despesas_sem_prolab_total = df_desp_sem_prolab['valor'].sum()
-    resultado = receitas_totais_validas - despesas_sem_prolab_total
-    perc = (total_retiradas / resultado * 100.0) if resultado != 0 else np.nan
-    return float(resultado), float(total_retiradas), float(perc)
-
-
 def gerar_dre(
     receita_honorarios: float,
     receita_certificados: float,
     receita_financeira: float,
     df_despesas_operacionais: pd.DataFrame,
-    df_retiradas: pd.DataFrame,
     valor_redutora: float
 ) -> pd.DataFrame:
-    """Gera a DRE simplificada com novos blocos de receita, despesas e distribuição."""
+    """Gera a DRE simplificada com pró-labores integrados às despesas administrativas."""
 
     receita_honorarios = float(receita_honorarios or 0.0)
     receita_certificados = float(receita_certificados or 0.0)
@@ -1946,18 +1986,24 @@ def gerar_dre(
 
     total_despesas_operacionais = despesas_adm + despesas_trab + despesas_trib + despesas_fin + despesas_banc
     resultado_operacional = receita_operacional_bruta - total_despesas_operacionais
+    resultado_liquido = resultado_operacional
 
-    retiradas_total = 0.0
-    detalhes_retirada: List[str] = []
-    if not df_retiradas.empty:
-        retiradas_total = float(df_retiradas['valor'].sum())
-        for _, row in df_retiradas.iterrows():
-            nome = str(row.get('item_nome', '')).strip()
-            valor = float(row.get('valor', 0.0))
-            if nome:
-                detalhes_retirada.append(f"• {nome.upper()}  R$ {valor:,.2f}")
+    prolabores_total = 0.0
+    detalhes_prolabore: List[str] = []
+    if not df_despesas_operacionais.empty:
+        if 'is_prolabore' in df_despesas_operacionais.columns:
+            mask_prolab = df_despesas_operacionais['is_prolabore'].fillna(False)
+        else:
+            mask_prolab = pd.Series([False] * len(df_despesas_operacionais), index=df_despesas_operacionais.index)
 
-    resultado_liquido = resultado_operacional - retiradas_total
+        if mask_prolab.any():
+            df_prolab = df_despesas_operacionais.loc[mask_prolab].copy()
+            prolabores_total = float(df_prolab['valor'].sum())
+            for _, row in df_prolab.iterrows():
+                nome = str(row.get('item_nome', '')).strip()
+                valor = float(row.get('valor', 0.0))
+                if nome:
+                    detalhes_prolabore.append(f"• {nome.upper()}  R$ {valor:,.2f}")
 
     def perc_receita(valor: float) -> float:
         return (valor / receita_total * 100.0) if receita_total else 0.0
@@ -2009,9 +2055,12 @@ def gerar_dre(
         'observacao': ''
     })
 
-    observacao_admin = ''
+    observacao_partes: List[str] = []
     if valor_redutora:
-        observacao_admin = f"Já líquidas da redutora advocacia: R$ {abs(valor_redutora):,.2f}"
+        observacao_partes.append(f"Já líquidas da redutora advocacia: R$ {abs(valor_redutora):,.2f}")
+    if prolabores_total:
+        observacao_partes.append(f"Inclui pró-labores: R$ {prolabores_total:,.2f}")
+    observacao_admin = " | ".join(observacao_partes)
 
     linhas.extend([
         {
@@ -2065,26 +2114,26 @@ def gerar_dre(
     ])
 
     linhas.append({
-        'bloco': '4. DISTRIBUIÇÃO DO RESULTADO',
-        'descricao': '(-) Retiradas dos Sócios',
-        'valor': -retiradas_total,
-        'percentual_receita_total': -perc_receita(retiradas_total),
-        'percentual_resultado_operacional': perc_resultado(-retiradas_total),
-        'observacao': "\n".join(detalhes_retirada)
-    })
-
-    linhas.append({
-        'bloco': '4. DISTRIBUIÇÃO DO RESULTADO',
-        'descricao': '(=) RESULTADO LÍQUIDO FINAL',
+        'bloco': '4. RESULTADO FINAL',
+        'descricao': '(=) RESULTADO OPERACIONAL / LÍQUIDO',
         'valor': resultado_liquido,
         'percentual_receita_total': perc_receita(resultado_liquido),
         'percentual_resultado_operacional': perc_resultado(resultado_liquido),
         'observacao': ''
     })
 
+    linhas.append({
+        'bloco': 'DISTRIBUIÇÃO INTERNA',
+        'descricao': 'Pró-labores dos Sócios (já incluídos em ADM)',
+        'valor': prolabores_total,
+        'percentual_receita_total': perc_receita(prolabores_total),
+        'percentual_resultado_operacional': perc_resultado(prolabores_total),
+        'observacao': "\n".join(detalhes_prolabore)
+    })
+
     margem_operacional = perc_receita(resultado_operacional)
-    perc_retirada_resultado = (retiradas_total / resultado_operacional * 100.0) if resultado_operacional else np.nan
-    perc_retirada_receita = perc_receita(retiradas_total)
+    perc_prolab_receita = perc_receita(prolabores_total)
+    perc_prolab_resultado = perc_resultado(prolabores_total)
 
     linhas.extend([
         {
@@ -2097,18 +2146,18 @@ def gerar_dre(
         },
         {
             'bloco': 'INDICADORES',
-            'descricao': '% Retirada sobre Resultado Operacional',
-            'valor': perc_retirada_resultado,
-            'percentual_receita_total': perc_retirada_resultado,
-            'percentual_resultado_operacional': perc_retirada_resultado,
+            'descricao': '% Pró-labores sobre Receita Total',
+            'valor': perc_prolab_receita,
+            'percentual_receita_total': perc_prolab_receita,
+            'percentual_resultado_operacional': perc_prolab_receita,
             'observacao': ''
         },
         {
             'bloco': 'INDICADORES',
-            'descricao': '% Retirada sobre Receita Total',
-            'valor': perc_retirada_receita,
-            'percentual_receita_total': perc_retirada_receita,
-            'percentual_resultado_operacional': perc_retirada_receita,
+            'descricao': '% Pró-labores sobre Resultado Operacional',
+            'valor': perc_prolab_resultado,
+            'percentual_receita_total': perc_prolab_resultado,
+            'percentual_resultado_operacional': perc_prolab_resultado,
             'observacao': ''
         },
     ])
@@ -2155,10 +2204,7 @@ def gera_relatorio_completo():
             log.append("✗ ERRO: Não há dados válidos de DESPESAS. Verifique a planilha de origem.")
             return log
 
-        despesas_por_tipo = separa_despesas_por_tipo(df_despesas)
-        empty_desp = df_despesas.head(0).copy()
-        df_retiradas = despesas_por_tipo.get('RETIRADA', empty_desp.copy())
-        df_despesas_operacionais_bruto = df_despesas[df_despesas['tipo_despesa'] != 'RETIRADA'].copy()
+        df_despesas_operacionais_bruto = df_despesas.copy()
         df_despesas_operacionais = df_despesas_operacionais_bruto.copy()
 
         mask_redutora = (
@@ -2168,8 +2214,15 @@ def gera_relatorio_completo():
         valor_redutora = df_despesas_operacionais.loc[mask_redutora, 'valor'].sum()
         df_despesas_operacionais = aplica_redutora_administrativa(df_despesas_operacionais, valor_redutora)
 
-        log.append(f"✓ Despesas OPERACIONAIS (para rateio): R$ {df_despesas_operacionais['valor'].sum():,.2f}")
-        log.append(f"✓ RETIRADAS dos sócios (fora de custos): R$ {df_retiradas['valor'].sum():,.2f}")
+        total_desp_oper = float(df_despesas_operacionais['valor'].sum())
+        if 'is_prolabore' in df_despesas_operacionais.columns:
+            mask_prolab_log = df_despesas_operacionais['is_prolabore'].fillna(False)
+            total_prolabores_log = float(df_despesas_operacionais.loc[mask_prolab_log, 'valor'].sum())
+        else:
+            total_prolabores_log = 0.0
+
+        log.append(f"✓ Despesas OPERACIONAIS (para rateio): R$ {total_desp_oper:,.2f}")
+        log.append(f"✓ Pró-labores incluídos em Despesas ADM: R$ {total_prolabores_log:,.2f}")
         log.append(f"✓ Redutora ADVOCACIA aplicada: R$ {valor_redutora:,.2f}")
 
         df_desp_rateado_geral = pd.DataFrame()
@@ -2178,27 +2231,15 @@ def gera_relatorio_completo():
             pesos = calcula_base_rateio(df_despesas_operacionais, log)
             df_desp_rateado_geral = aplica_rateio_proporcional(df_despesas_operacionais, pesos, log)
 
-        df_desp_sem_retirada = df_despesas_operacionais.copy()
-        total_retiradas = float(df_retiradas['valor'].sum())
-
-        resultado_liq_sem_pl, total_retiradas_val, perc_retirada = percentual_retirada_sobre_resultado(
-            df_receitas_validas=df_honorarios,
-            df_desp_sem_prolab=df_desp_sem_retirada,
-            total_retiradas=total_retiradas
-        )
-
-        resumo_retirada = pd.DataFrame([{ 
-            "receitas_validas": df_honorarios['receita'].sum(),
-            "despesas_sem_retirada": df_desp_sem_retirada['valor'].sum(),
-            "resultado_liquido_sem_retirada": resultado_liq_sem_pl,
-            "retiradas_socios": total_retiradas_val,
-            "percentual_retirada_sobre_resultado_%": perc_retirada,
-            "percentual_retirada_sobre_receita": (total_retiradas_val / df_honorarios['receita'].sum() * 100) if df_honorarios['receita'].sum() else 0.0,
-        }])
+        if 'is_prolabore' in df_despesas_operacionais.columns:
+            mask_prolab_geral = df_despesas_operacionais['is_prolabore'].fillna(False)
+            total_retiradas = float(df_despesas_operacionais.loc[mask_prolab_geral, 'valor'].sum())
+        else:
+            total_retiradas = 0.0
 
         df_ticket_geral, df_ticket_regime, df_ticket_reg_ativ, df_ticket_clientes = gera_ticket_medio(df_honorarios)
 
-        df_top_desp, df_top_desp_admin = gera_top_despesas(df_despesas_operacionais, TOP_N_DESPESAS) if not df_despesas_operacionais.empty else (pd.DataFrame(), pd.DataFrame())
+        df_top_desp = gera_top_despesas(df_despesas_operacionais, TOP_N_DESPESAS) if not df_despesas_operacionais.empty else pd.DataFrame()
 
         df_regime_peso, df_seg_peso = custo_absorcao_por_peso(df_honorarios, df_desp_rateado_geral, pesos_regime=PESOS_COMPLEXIDADE_REGIME) if not df_honorarios.empty else (
             _empty_df(RESULTADO_REGIME_FULL_COLS),
@@ -2212,6 +2253,11 @@ def gera_relatorio_completo():
         df_regime_peso__noPL, df_seg_peso__noPL = df_regime_peso.copy(), df_seg_peso.copy()
 
         meses = MESES_ACUMULADOS if MESES_ACUMULADOS > 0 else 1
+        df_impacto_retiradas = analise_impacto_retiradas(
+            df_receitas,
+            df_despesas_operacionais,
+            meses
+        )
         df_margem_regime, df_margem_segmento, df_margem_cliente = analise_margem_contribuicao(
             df_honorarios, df_desp_rateado_geral, meses
         )
@@ -2237,7 +2283,6 @@ def gera_relatorio_completo():
             receita_certificados=df_certificados['receita'].sum(),
             receita_financeira=df_financeiras['receita'].sum(),
             df_despesas_operacionais=df_desp_rateado_geral,
-            df_retiradas=df_retiradas,
             valor_redutora=valor_redutora
         )
 
@@ -2253,19 +2298,17 @@ def gera_relatorio_completo():
             ('Receitas_Financeiras', df_financeiras),
             ('Despesas_Base_Original', df_despesas),
             ('Despesas_Operacionais', df_despesas_operacionais),
-            ('Retiradas_Socios', df_retiradas),
             ('Despesas_Rateadas_Geral', df_desp_rateado_geral),
             ('Ticket_Geral', df_ticket_geral),
             ('Ticket_Regime', df_ticket_regime),
             ('Ticket_Regime_Atividade', df_ticket_reg_ativ),
             ('Ticket_Clientes', df_ticket_clientes),
+            ('Impacto_Retiradas_Socios', df_impacto_retiradas),
             ('Top_Despesas', df_top_desp),
-            ('Top_Despesas_Adm', df_top_desp_admin),
             ('Resultado_Regime_Com_Peso', df_regime_peso_excel),
             ('Resultado_Segmento_Com_Peso', df_seg_peso_excel),
             ('Res_Regime_Com_Peso_Sem_PL', df_regime_peso_no_pl_excel),
             ('Res_Segmento_Com_Peso_Sem_PL', df_seg_peso_no_pl_excel),
-            ('Resumo_Retirada', resumo_retirada),
             ('DRE_Simplificada', dre),
             ('Margem_Contribuicao_Regime', df_margem_regime),
             ('Margem_Contribuicao_Segmento', df_margem_segmento),
@@ -2360,14 +2403,13 @@ def valida_resultado(
     else:
         checks.append(f"⚠️ Divergência em receitas: R$ {delta_receitas:,.2f}")
 
-    total_retiradas = df_despesas[df_despesas['tipo_despesa'] == 'RETIRADA']['valor'].sum()
     total_oper = df_despesas_operacionais['valor'].sum()
     total_desp = df_despesas['valor'].sum()
-    delta_desp = abs((total_retiradas + total_oper) - total_desp)
+    delta_desp = abs(total_oper - total_desp)
     if delta_desp < 0.01:
-        checks.append("Despesas operacionais + retiradas conferem com o total.")
+        checks.append("Despesas operacionais conferem com o total lido.")
     else:
-        checks.append(f"⚠️ Divergência em despesas: R$ {delta_desp:,.2f}")
+        checks.append(f"⚠️ Divergência em despesas operacionais: R$ {delta_desp:,.2f}")
 
     valor_adm_bruto = df_despesas_operacionais_bruto[
         df_despesas_operacionais_bruto['tipo_despesa'] == 'DESPESA ADMINISTRATIVA'
@@ -2383,10 +2425,12 @@ def valida_resultado(
     else:
         checks.append("Nenhuma redutora de advocacia identificada.")
 
-    if not df_despesas_rateadas.empty and 'RETIRADA' in df_despesas_rateadas['tipo_despesa'].unique():
-        checks.append("⚠️ Retiradas presentes em despesas rateadas.")
+    if df_despesas_rateadas.empty:
+        checks.append("⚠️ Despesas rateadas indisponíveis para validar pró-labores.")
+    elif 'is_prolabore' in df_despesas_rateadas.columns:
+        checks.append("Pró-labores integrados às despesas rateadas.")
     else:
-        checks.append("Retiradas fora das despesas rateadas.")
+        checks.append("⚠️ Coluna 'is_prolabore' ausente nas despesas rateadas.")
 
     honorario_unicos = set(df_honorarios['classificacao_receita'].unique())
     if honorario_unicos == {'HONORARIO'} or honorario_unicos == {'HONORARIO', ''}:
