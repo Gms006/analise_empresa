@@ -3,78 +3,144 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Relatório Financeiro - Análise v3</title>
+  <title>Relatório Financeiro - Análise v4</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    :root{ --bg:#0f172a; --panel:#111827; --ink:#e5e7eb; --ink-dim:#9ca3af; --accent:#22c55e; --shadow:0 10px 30px rgba(0,0,0,.35); --radius:16px; }
+    :root{
+      --bg:#0f172a;
+      --panel:#111827;
+      --ink:#e5e7eb;
+      --ink-dim:#94a3b8;
+      --accent:#22c55e;
+      --shadow:0 10px 30px rgba(0,0,0,.35);
+      --radius:16px;
+      --negative:#fecaca;
+      --positive:#bbf7d0;
+    }
     *{box-sizing:border-box}
-    body{ margin:0; font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,'Noto Sans',sans-serif;
-          color:var(--ink); background: radial-gradient(1200px 700px at 20% -10%, #172554 0%, transparent 60%), radial-gradient(1000px 600px at 90% 0%, #052e16 0%, transparent 60%), var(--bg); }
-    header{ padding:28px 22px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-    .brand{ display:flex; align-items:center; gap:14px; }
-    .logo{ width:44px; height:44px; border-radius:12px; background:linear-gradient(135deg,#22c55e 0%,#0ea5e9 60%,#a78bfa 100%); box-shadow:var(--shadow);}
+    body{
+      margin:0;
+      font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,'Noto Sans',sans-serif;
+      color:var(--ink);
+      background: radial-gradient(1200px 700px at 20% -10%, #172554 0%, transparent 60%),
+                  radial-gradient(1000px 600px at 90% 0%, #052e16 0%, transparent 60%), var(--bg);
+    }
+    header{
+      padding:28px 22px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .brand{display:flex;align-items:center;gap:14px}
+    .logo{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#22c55e 0%,#0ea5e9 60%,#a78bfa 100%);box-shadow:var(--shadow);}
     h1{font-size:22px;margin:0;font-weight:800}
     .subtitle{color:var(--ink-dim);font-size:13px;margin-top:2px}
     .toolbar{display:flex;gap:10px;flex-wrap:wrap}
-    button, .btn{ background:linear-gradient(180deg, #1f2937, #111827); color:var(--ink); border:1px solid #334155; padding:10px 14px; border-radius:12px; font-weight:600; font-size:13px; cursor:pointer; transition:all .2s ease; display:inline-flex; align-items:center; gap:8px; }
-    button:hover{ transform:translateY(-1px); box-shadow:var(--shadow); border-color:#475569 }
-    button:disabled{ opacity:0.5; cursor:not-allowed; transform:none; }
-    .btn-primary{ background:linear-gradient(180deg,#22c55e,#16a34a); border-color:#16a34a; color:#03180d }
-    .btn-warn{ background:linear-gradient(180deg,#f59e0b,#d97706); border-color:#d97706; color:#1a0f00 }
+    button,.btn{background:linear-gradient(180deg,#1f2937,#111827);color:var(--ink);border:1px solid #334155;padding:10px 14px;border-radius:12px;font-weight:600;font-size:13px;cursor:pointer;transition:all .2s ease;display:inline-flex;align-items:center;gap:8px;text-decoration:none}
+    button:hover,.btn:hover{transform:translateY(-1px);box-shadow:var(--shadow);border-color:#475569}
+    button:disabled{opacity:.5;cursor:not-allowed;transform:none}
+    .btn-primary{background:linear-gradient(180deg,#22c55e,#16a34a);border-color:#16a34a;color:#03180d}
+    .btn-warn{background:linear-gradient(180deg,#f59e0b,#d97706);border-color:#d97706;color:#1a0f00}
+    .btn-ghost{background:transparent;border-color:transparent;color:#60a5fa;padding:6px 8px;border-radius:8px}
+    .btn-ghost:hover{background:#1e293b;transform:none;box-shadow:none}
+    .btn-sm{padding:6px 10px;font-size:12px;border-radius:10px}
+    .btn-link{background:none;border:none;color:#60a5fa;font-weight:600;padding:0;cursor:pointer}
+    .btn-link:hover{text-decoration:underline;transform:none;box-shadow:none}
     .container{padding:0 22px 80px}
     .grid{display:grid;gap:16px}
-    .grid.cols-4{grid-template-columns: repeat(4, minmax(0, 1fr));}
-    .grid.cols-2{grid-template-columns: repeat(2, minmax(0, 1fr));}
-    @media (max-width:900px){ .grid.cols-4{grid-template-columns: repeat(2, minmax(0, 1fr));} .grid.cols-2{grid-template-columns: 1fr;} }
-    .card{ background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01)), var(--panel); border:1px solid #233045; border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; }
-    .kpi{ padding:18px; background:linear-gradient(180deg, rgba(34,197,94,.09), rgba(34,197,94,.03)), #0b1324; border:1px solid rgba(34,197,94,.25); border-radius:16px; }
+    .grid.auto-fit{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+    .grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    @media (max-width:900px){.grid.cols-2{grid-template-columns:1fr}}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.01)),var(--panel);border:1px solid #233045;border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;position:relative}
+    .card.card-empty{opacity:.7}
+    .card-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+    .card-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .kpi{padding:18px;background:linear-gradient(180deg,rgba(34,197,94,.09),rgba(34,197,94,.03)),#0b1324;border:1px solid rgba(34,197,94,.25);border-radius:16px;display:flex;flex-direction:column;gap:6px}
+    .kpi.alt{background:linear-gradient(180deg,rgba(96,165,250,.08),rgba(96,165,250,.03)),#0b1324;border-color:rgba(96,165,250,.35)}
+    .kpi.warn{background:linear-gradient(180deg,rgba(245,158,11,.10),rgba(245,158,11,.03)),#0b1324;border-color:rgba(245,158,11,.35)}
     .kpi .label{color:#99f6e4;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.8px}
-    .kpi .value{font-size:28px;font-weight:800;margin:8px 0}
+    .kpi .value{font-size:26px;font-weight:800}
     .kpi .desc{color:var(--ink-dim);font-size:12px}
-    .kpi.warn{ background:linear-gradient(180deg, rgba(245,158,11,.10), rgba(245,158,11,.03)), #0b1324; border-color: rgba(245,158,11,.35); }
-    .alt{  background:linear-gradient(180deg, rgba(96,165,250,.08), rgba(96,165,250,.03)), #0b1324; border-color: rgba(96,165,250,.35); }
-    .tabs{display:flex;gap:8px;margin:6px 0 14px; flex-wrap:wrap;}
+    .hero{border-radius:20px;padding:20px 18px;margin-bottom:18px;background:radial-gradient(800px 300px at 20% -10%,rgba(34,197,94,.18),transparent 60%),linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.01)),#0b1324;border:1px solid #1e293b;box-shadow:var(--shadow)}
+    .divider{height:1px;background:#1f2a3c;margin:14px 0}
+    .tag{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border:1px solid #2b3546;background:#0a1322;border-radius:999px;font-size:12px;color:#cbd5e1;margin-right:8px;margin-bottom:6px}
+    .search-bar{margin-top:16px;display:flex;justify-content:flex-end}
+    .search-bar input{width:320px;max-width:100%;padding:10px 12px;border-radius:12px;border:1px solid #1f2a3c;background:#0b1324;color:var(--ink);font-size:13px}
+    .search-bar input::placeholder{color:#475569}
+    .tabs{display:flex;gap:8px;margin:6px 0 14px;flex-wrap:wrap}
     .tab{padding:8px 12px;border-radius:999px;border:1px solid #334155;background:#0b1324;color:#cbd5e1;font-weight:600;font-size:12px;cursor:pointer}
-    .tab.active{border-color:#60a5fa;background:linear-gradient(180deg, rgba(59,130,246,.18), rgba(59,130,246,.06));color:#e2e8f0}
+    .tab.active{border-color:#60a5fa;background:linear-gradient(180deg,rgba(59,130,246,.18),rgba(59,130,246,.06));color:#e2e8f0}
     table{width:100%;border-collapse:separate;border-spacing:0 8px}
     thead th{color:#9ca3af;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:left;padding:8px}
     tbody td{padding:10px 8px;background:#0a1220;border-top:1px solid #20314a;border-bottom:1px solid #20314a}
-    tbody tr:hover{transform:translateY(-1px)}
+    tbody tr{transition:transform .2s ease,background .2s ease}
+    tbody tr:hover{transform:translateY(-1px);background:rgba(148,163,184,.08)}
     tbody td:first-child{border-left:1px solid #20314a;border-top-left-radius:12px;border-bottom-left-radius:12px}
     tbody td:last-child{border-right:1px solid #20314a;border-top-right-radius:12px;border-bottom-right-radius:12px;text-align:right}
-    .muted{color:var(--ink-dim)} .small{font-size:12px} .hidden{display:none}
+    tbody tr.row-active{background:rgba(96,165,250,.18)}
+    tbody tr.row-highlight{background:rgba(34,197,94,.14)}
+    .muted{color:var(--ink-dim)}
+    .small{font-size:12px}
+    .hidden{display:none}
     .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;background:#0a162b;border:1px solid #22324f;color:#e2e8f0}
-    .pill.negative{ background:#2a0a10; border-color:#4c1d1d; color:#fecaca; }
-    .pill.positive{ background:#062a17; border-color:#064e3b; color:#bbf7d0; }
-    .hero{ border-radius:20px;padding:20px 18px;margin-bottom:18px; background: radial-gradient(800px 300px at 20% -10%, rgba(34,197,94,.18), transparent 60%), linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01)), #0b1324; border:1px solid #1e293b; box-shadow: var(--shadow);}
-    .divider{height:1px;background:#1f2a3c;margin:14px 0}
-    .tag{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border:1px solid #2b3546;background:#0a1322;border-radius:999px;font-size:12px;color:#cbd5e1}
-    .right{text-align:right}
-    #toast{position:fixed;bottom:18px;right:18px; background:#111827; border:1px solid #334155; padding:12px 14px; border-radius:10px; color:#e2e8f0; box-shadow:var(--shadow); display:none; max-width:400px;}
-    #toast.error{border-color:#dc2626; background:#1f0808;}
-    #toast.success{border-color:#22c55e; background:#062a17;}
-    #loading{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:none;align-items:center;justify-content:center;z-index:9999;}
-    #loading.show{display:flex;}
-    .spinner{width:60px;height:60px;border:4px solid #334155;border-top-color:#22c55e;border-radius:50%;animation:spin 1s linear infinite;}
-    @keyframes spin{to{transform:rotate(360deg);}}
-    .alert{padding:16px;border-radius:12px;margin:16px 0;border:1px solid;}
-    .alert.error{background:#2a0a10;border-color:#4c1d1d;color:#fecaca;}
-    .alert.info{background:#0a1b2e;border-color:#1e3a5f;color:#93c5fd;}
-    .alert.success{background:#062a17;border-color:#064e3b;color:#bbf7d0;}
-    .diagnostic{font-family:monospace;font-size:11px;background:#0a0f1a;padding:12px;border-radius:8px;margin-top:8px;max-height:200px;overflow-y:auto;}
+    .pill.negative{background:#2a0a10;border-color:#4c1d1d;color:var(--negative)}
+    .pill.positive{background:#062a17;border-color:#064e3b;color:var(--positive)}
+    .badge{display:inline-flex;align-items:center;gap:4px;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid #334155;background:#152039;color:#cbd5e1}
+    .badge.error{border-color:#b91c1c;background:#451313;color:#fecaca}
+    .badge.warn{border-color:#d97706;background:#3f2205;color:#facc15}
+    .badge.ok{border-color:#16a34a;background:#052b19;color:#bbf7d0}
+    .filter-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+    .chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:12px;background:#0b1324;border:1px solid #1f2a3c;font-size:12px}
+    .chip button{background:none;border:none;color:#60a5fa;font-weight:700;cursor:pointer}
+    .validation-list{display:flex;flex-direction:column;gap:10px}
+    .validation-row{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:12px;border:1px solid #1f2a3c;background:#0a1320}
+    .validation-row .header{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px}
+    .validation-row .header-left{display:flex;align-items:center;gap:8px;font-weight:600}
+    .validation-row.ok{border-color:#14532d}
+    .validation-row.warn{border-color:#b45309}
+    .validation-row.error{border-color:#7f1d1d}
+    .validation-row details{font-family:monospace;font-size:11px;background:#050a17;border-radius:8px;padding:8px}
+    .validation-row details summary{cursor:pointer;font-size:11px;font-weight:600;color:#60a5fa}
+    .bar-cell{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+    .bar-cell .bar-wrapper{flex:0 0 120px;background:#1e293b;border-radius:999px;overflow:hidden;height:6px}
+    .bar-cell .bar{height:100%;background:linear-gradient(90deg,#22d3ee,#2563eb)}
+    .status-note{font-size:12px;color:#eab308}
+    #toast{position:fixed;bottom:18px;right:18px;background:#111827;border:1px solid #334155;padding:12px 14px;border-radius:10px;color:#e2e8f0;box-shadow:var(--shadow);display:none;max-width:400px;z-index:9999}
+    #toast.error{border-color:#dc2626;background:#1f0808}
+    #toast.success{border-color:#22c55e;background:#062a17}
+    #loading{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:none;align-items:center;justify-content:center;z-index:9999}
+    #loading.show{display:flex}
+    .spinner{width:60px;height:60px;border:4px solid #334155;border-top-color:#22c55e;border-radius:50%;animation:spin 1s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .alert{padding:16px;border-radius:12px;margin:16px 0;border:1px solid}
+    .alert.error{background:#2a0a10;border-color:#4c1d1d;color:#fecaca}
+    .alert.info{background:#0a1b2e;border-color:#1e3a5f;color:#93c5fd}
+    .alert.success{background:#062a17;border-color:#064e3b;color:#bbf7d0}
+    .card .empty-message{color:var(--ink-dim);font-size:12px;padding:8px 4px}
+    @media print{
+      body{background:#fff;color:#000}
+      header,.toolbar,button,.btn,#toast,#loading{display:none!important}
+      .hero,.card{box-shadow:none;border:1px solid #ccc;background:#fff;color:#000}
+      .card{page-break-inside:avoid}
+      .tabs,.tab{display:none!important}
+      .hidden{display:block!important}
+      .chip button{display:none}
+    }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
   <div id="loading"><div class="spinner"></div></div>
-  
+
   <header>
     <div class="brand">
       <div class="logo" aria-hidden="true"></div>
       <div>
-        <h1>Relatório Financeiro — Análise v3</h1>
+        <h1>Relatório Financeiro — Análise v4</h1>
         <div class="subtitle">Aguardando carregamento da planilha...</div>
       </div>
     </div>
@@ -91,29 +157,41 @@
   </header>
 
   <main class="container">
+    <!--
+    Relatório Financeiro - Análise v4.0
+    Características:
+    - Visão única COM PESO (complexidade × volume)
+    - DRE Simplificada com margem líquida
+    - Pró-labores separados do resultado operacional
+    -->
     <div id="status-area"></div>
 
     <section class="hero">
       <h2>Visão Executiva</h2>
       <p class="muted">Principais resultados e impactos — tickets, custos alocados e resultado por regime.</p>
-      <div class="grid cols-4">
+      <div class="grid auto-fit">
         <div class="kpi" id="kpi-receita-mensal">
           <div class="label">Receita Mensal Total</div>
           <div class="value">—</div>
-          <div class="desc">Com base em honorários (CORE)</div>
+          <div class="desc"><span id="kpi-qtd-clientes" class="pill">— clientes</span></div>
         </div>
         <div class="kpi alt" id="kpi-ticket-medio">
           <div class="label">Ticket Médio Mensal</div>
           <div class="value">—</div>
-          <div class="desc"><span id="kpi-qtd-clientes" class="pill">— clientes</span></div>
+          <div class="desc">Valor médio por cliente</div>
         </div>
-        <div class="kpi" id="kpi-resultado-sem-peso">
-          <div class="label">Resultado Total (Sem Peso)</div>
+        <div class="kpi" id="kpi-custo-medio">
+          <div class="label">Custo Médio Mensal (cliente)</div>
           <div class="value">—</div>
-          <div class="desc"><span id="kpi-margem-sem-peso" class="pill">—</span></div>
+          <div class="desc">Baseado em custos alocados</div>
+        </div>
+        <div class="kpi" id="kpi-resultado-medio">
+          <div class="label">Resultado Médio Mensal (cliente)</div>
+          <div class="value">—</div>
+          <div class="desc">Considerando rateio com peso</div>
         </div>
         <div class="kpi warn" id="kpi-resultado-com-peso">
-          <div class="label">Resultado Total (Com Peso)</div>
+          <div class="label">Resultado Total</div>
           <div class="value">—</div>
           <div class="desc"><span id="kpi-margem-com-peso" class="pill">—</span></div>
         </div>
@@ -122,29 +200,52 @@
       <div class="tag">Alfa (volume): <strong id="meta-alfa">—</strong></div>
       <div class="tag">Beta (ticket): <strong id="meta-beta">—</strong></div>
       <div class="tag">Abatimento Advocacia em ADM: <strong id="meta-adv">—</strong></div>
+      <div class="search-bar">
+        <input type="search" id="global-search" placeholder="Buscar por regime, segmento ou cliente...">
+      </div>
     </section>
 
     <section class="card">
-      <div class="tabs">
-        <button class="tab active" data-tab="tabRegimeSemPeso">Resultado por Regime (Sem Peso)</button>
-        <button class="tab" data-tab="tabRegimeComPeso">Resultado por Regime (Com Peso)</button>
+      <div class="card-header">
+        <h2 style="margin:0">Resultado por Regime</h2>
+        <div class="card-actions">
+          <span class="badge warn hidden" data-status-sheet="Resultado_Regime_Com_Peso">Sem dados</span>
+          <button class="btn-sm" data-export="tabRegimeComPeso">⬇️ Exportar CSV</button>
+        </div>
       </div>
-      <div id="tabRegimeSemPeso"></div>
-      <div id="tabRegimeComPeso" class="hidden"></div>
+      <div id="tabRegimeComPeso"></div>
     </section>
 
     <div class="grid cols-2" style="margin-top:16px">
-      <section class="card">
-        <h2 style="margin:0 0 10px 0">Resultado por Regime + Atividade (Com Peso)</h2>
+      <section class="card" id="card-segmento">
+        <div class="card-header">
+          <h2 style="margin:0">Resultado por Regime + Atividade (Com Peso)</h2>
+          <div class="card-actions">
+            <span class="badge warn hidden" data-status-sheet="Resultado_Segmento_Com_Peso">Sem dados</span>
+            <button class="btn-sm" data-export="tabSegmentoComPeso">⬇️ Exportar CSV</button>
+          </div>
+        </div>
+        <div class="filter-chips" id="chip-segmento"></div>
         <div id="tabSegmentoComPeso"></div>
       </section>
-      <section class="card">
-        <h2 style="margin:0 0 10px 0">Tickets Médios</h2>
+      <section class="card" id="card-tickets">
+        <div class="card-header">
+          <h2 style="margin:0">Tickets Médios</h2>
+        <div class="card-actions">
+          <span class="badge warn hidden" data-status-sheet="Ticket_Regime">Sem dados</span>
+          <span class="badge warn hidden" data-status-sheet="Ticket_Regime_Atividade">Sem dados</span>
+          <span class="badge warn hidden" data-status-sheet="Ticket_Clientes">Sem dados</span>
+          <button class="btn-sm" data-export="tabTicketsRegime">⬇️ Exportar CSV</button>
+          <button class="btn-sm" data-export="tabTicketsRegAtiv">⬇️ Exportar CSV</button>
+          <button class="btn-sm" data-export="tabTicketsClientes">⬇️ Exportar CSV</button>
+        </div>
+        </div>
         <div class="tabs">
           <button class="tab active" data-tab="tabTicketsRegime">Por Regime</button>
           <button class="tab" data-tab="tabTicketsRegAtiv">Regime + Atividade</button>
           <button class="tab" data-tab="tabTicketsClientes">Top Clientes</button>
         </div>
+        <div class="filter-chips" id="chip-tickets"></div>
         <div id="tabTicketsRegime"></div>
         <div id="tabTicketsRegAtiv" class="hidden"></div>
         <div id="tabTicketsClientes" class="hidden"></div>
@@ -152,186 +253,975 @@
     </div>
 
     <div class="grid cols-2" style="margin-top:16px">
-      <section class="card">
-        <h2 style="margin:0 0 10px 0">Top Despesas (Geral)</h2>
+      <section class="card" id="card-top-desp">
+        <div class="card-header">
+          <h2 style="margin:0">Top Despesas (Geral)</h2>
+          <div class="card-actions">
+            <span class="badge warn hidden" data-status-sheet="Top_Despesas">Sem dados</span>
+            <button class="btn-sm" data-export="tabTopDespesas">⬇️ Exportar CSV</button>
+            <button class="btn-ghost" data-excel="Top_Despesas">Ver no Excel</button>
+          </div>
+        </div>
         <div id="tabTopDespesas"></div>
       </section>
-      <section class="card">
-        <h2 style="margin:0 0 10px 0">Top Despesas Administrativas</h2>
+      <section class="card" id="card-top-desp-adm">
+        <div class="card-header">
+          <h2 style="margin:0">Top Despesas Administrativas</h2>
+          <div class="card-actions">
+            <span class="badge warn hidden" data-status-sheet="Top_Despesas_Adm">Sem dados</span>
+            <button class="btn-sm" data-export="tabTopDespesasAdm">⬇️ Exportar CSV</button>
+            <button class="btn-ghost" data-excel="Top_Despesas_Adm">Ver no Excel</button>
+          </div>
+        </div>
         <div id="tabTopDespesasAdm"></div>
       </section>
     </div>
 
-    <section class="card" style="margin-top:16px">
-      <h2 style="margin:0 0 10px 0">Resumo de Retirada (sem pró-labore no resultado)</h2>
+    <section class="card" style="margin-top:16px" id="card-resumo">
+      <div class="card-header">
+        <h2 style="margin:0">Resumo de Retirada (sem pró-labore no resultado)</h2>
+        <div class="card-actions">
+          <span class="badge warn hidden" data-status-sheet="Resumo_Retirada">Sem dados</span>
+          <button class="btn-sm" data-export="tabResumoRetirada">⬇️ Exportar CSV</button>
+        </div>
+      </div>
       <div id="tabResumoRetirada"></div>
     </section>
 
-    <section class="card" style="margin-top:16px">
-      <h2 style="margin:0 0 10px 0">Comparativo de Impacto — Sem Peso × Com Peso</h2>
-      <div id="tabComparativo"></div>
+    <section class="card" style="margin-top:16px" id="card-dre">
+      <div class="card-header">
+        <h2 style="margin:0">DRE Simplificada</h2>
+        <div class="card-actions">
+          <span class="badge warn hidden" data-status-sheet="DRE_Simplificada">Sem dados</span>
+          <button class="btn-sm" data-export="tabDRE">⬇️ Exportar CSV</button>
+        </div>
+      </div>
+      <div id="tabDRE"></div>
+    </section>
+
+    <section class="card" style="margin-top:16px" id="card-validacoes">
+      <div class="card-header">
+        <h2 style="margin:0">Validações & Confrontos</h2>
+      </div>
+      <div class="validation-list" id="validations-list"></div>
     </section>
 
   </main>
   <div id="toast"></div>
 
   <script>
-    // ---------- utils ----------
-    const BRL = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
-    const DEC2 = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:2, minimumFractionDigits:0});
-    const PCT1 = new Intl.NumberFormat('pt-BR',{style:'percent', maximumFractionDigits:1});
-    
-    const showLoading = (show)=>{ document.getElementById('loading').classList.toggle('show', show); };
-    
-    const showToast = (msg, type='info')=>{ 
-      const t=document.getElementById('toast'); 
-      t.textContent=msg; 
-      t.className = type;
-      t.style.display='block'; 
-      setTimeout(()=> t.style.display='none', 5000); 
-    };
-    
-    const showStatus = (msg, type='info')=>{
-      const area = document.getElementById('status-area');
-      area.innerHTML = `<div class="alert ${type}">${msg}</div>`;
-    };
-    
-    const asNum = (v)=>{
-      if (v===null || v===undefined) return 0;
-      if (typeof v==='number') return v;
-      if (typeof v==='string'){ 
-        const s=v.replace(/[R$\s\.]/g,'').replace(',','.'); 
-        const n=parseFloat(s); 
-        return isNaN(n)?0:n; 
-      }
-      return Number(v)||0;
-    };
-    
-    const normalizeKey = (k)=> String(k||'').trim().toLowerCase()
-      .replace(/[àáâãäå]/g,'a')
-      .replace(/[èéêë]/g,'e')
-      .replace(/[ìíîï]/g,'i')
-      .replace(/[òóôõö]/g,'o')
-      .replace(/[ùúûü]/g,'u')
-      .replace(/[ç]/g,'c')
-      .replace(/\s+/g,'_')
-      .replace(/[^\w_]/g,'');
-    
-    const mapRow = (row)=>{ 
-      const m={}; 
-      Object.keys(row||{}).forEach(k=> {
-        const nk = normalizeKey(k);
-        m[nk]=row[k];
-      }); 
-      return m; 
-    };
-    
-    function tableFromData(targetId, columns, rows){
-      const root=document.getElementById(targetId); 
-      if(!root) return;
-      if(!rows||!rows.length){ 
-        root.innerHTML='<div class="muted small">Sem dados disponíveis.</div>'; 
-        return; 
-      }
-      const head=columns.map(c=>`<th>${c.label||c.key}</th>`).join('');
-      const body=rows.map(r=>'<tr>'+columns.map(c=>{
-        let val=r[c.key]; 
-        if(c.format) val=c.format(val, r);
-        return `<td ${c.right?'style="text-align:right"':''}>${val??''}</td>`;
-      }).join('')+'</tr>').join('');
-      root.innerHTML=`<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    // ---------- Normalização e utilidades ----------
+    function normalizeKey(k){
+      return String(k||'')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+        .toLowerCase().trim().replace(/\s+/g,'_')
+        .replace(/[^\w_]/g,'');
     }
-    
-    const tryGetSheet = (wb,name)=> {
-      if (!wb.SheetNames.includes(name)) return null;
-      try {
+    function rowToMap(row){
+      const m={}; Object.keys(row||{}).forEach(k=> m[normalizeKey(k)]=row[k]); return m;
+    }
+    function asNum(v){
+      if(v===null||v===undefined) return 0;
+      if(typeof v==='number' && Number.isFinite(v)) return v;
+      if(typeof v==='string'){
+        const s=v.replace(/[^\d,\.\-]/g,'').replace(/\./g,'').replace(',','.');
+        const n=parseFloat(s); return Number.isFinite(n)?n:0;
+      }
+      const n=Number(v); return Number.isFinite(n)?n:0;
+    }
+    function pct01(x){
+      const n = asNum(x);
+      if (!Number.isFinite(n)) return 0;
+      return n>1 ? n/100 : n;
+    }
+    const BRL = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
+    const PCT = new Intl.NumberFormat('pt-BR',{style:'percent', maximumFractionDigits:1});
+    const DEC = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:2});
+    const INT = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:0});
+
+    const sum = (rows, getter) => (rows||[]).reduce((a,r)=> a + asNum(getter(r)), 0);
+
+    // ---------- Mapeador de sinônimos por aba ----------
+    const COLMAP = {
+      Ticket_Geral:{
+        receita_mensal: ['receita_mensal','receita_mensal_total','receita_total_mensal','receitamensal'],
+        ticket_medio_mensal: ['ticket_medio_mensal','ticket_mensal','ticketmedio'],
+        qtd_clientes: ['qtd_clientes','clientes','n_clientes','total_clientes']
+      },
+      Ticket_Regime:{
+        regime_base: ['regime_base','regime'],
+        qtd_clientes: ['qtd_clientes','clientes'],
+        receita_mensal: ['receita_mensal','receita_total_mensal','receitamensal'],
+        ticket_medio_mensal: ['ticket_medio_mensal','ticket_mensal','ticketmedio'],
+        ticket_mediano_mensal: ['ticket_mediano_mensal','ticket_mediano','ticketmediano']
+      },
+      Ticket_Regime_Atividade:{
+        regime_base:['regime_base','regime'],
+        segmento:['segmento','atividade'],
+        qtd_clientes:['qtd_clientes','clientes'],
+        receita_mensal:['receita_mensal','receita_total_mensal'],
+        ticket_medio_mensal:['ticket_medio_mensal','ticket_mensal'],
+        ticket_mediano_mensal:['ticket_mediano_mensal','ticket_mediano']
+      },
+      Ticket_Clientes:{
+        rank:['rank','#'],
+        cliente:['cliente','empresa','razao_social'],
+        regime_base:['regime_base','regime'],
+        segmento:['segmento','atividade'],
+        ticket_mensal:['ticket_mensal','ticket_medio_mensal','ticket']
+      },
+      Resultado_Regime_Com_Peso:{
+        regime_base:['regime_base','regime'],
+        qtd_clientes:['qtd_clientes','clientes'],
+        receita_mensal:['receita_mensal','receita_total_mensal'],
+        custo_mensal:['custo_mensal','custo_total_mensal'],
+        resultado_mensal:['resultado_mensal','lucro_mensal']
+      },
+      Resultado_Segmento_Com_Peso:{
+        regime_base:['regime_base','regime'],
+        segmento:['segmento','atividade'],
+        qtd_clientes:['qtd_clientes','clientes'],
+        receita_mensal_segmento:['receita_mensal_segmento','receita_mensal','receita'],
+        custo_mensal_segmento:['custo_mensal_segmento','custo_mensal','custo'],
+        resultado_mensal:['resultado_mensal','lucro_mensal']
+      },
+      Top_Despesas:{
+        rank:['rank','#'],
+        grupo:['grupo','categoria'],
+        item_nome:['item_nome','item','descricao'],
+        valor:['valor','valor_total','montante'],
+        perc_total_despesas:['perc_total_despesas','%_do_total','percentual']
+      },
+      Top_Despesas_Adm:{
+        rank:['rank','#'],
+        item_nome:['item_nome','item'],
+        valor:['valor','valor_total','montante'],
+        perc_no_grupo:['perc_no_grupo','%_no_grupo','percentual']
+      },
+      Resumo_Retirada:{
+        alfa_volume:['alfa_volume','alfa'],
+        beta_ticket:['beta_ticket','beta'],
+        abatimento_rateio_advocacia_aplicado:['abatimento_rateio_advocacia_aplicado','abatimento_advocacia','abatimento_em_adm']
+      }
+    };
+
+    function pick(row, field, sheetName){
+      const M = COLMAP[sheetName]||{};
+      const candidates = (M[field] || [field]).map(normalizeKey);
+      const map = rowToMap(row);
+      for(const c of candidates){ if(c in map) return map[c]; }
+      return undefined;
+    }
+
+    function sheetRows(wb, name){
+      const sh = wb.Sheets[name];
+      if(!sh) return null;
+      const rows = XLSX.utils.sheet_to_json(sh);
+      return rows.map(rowToMap);
+    }
+
+    function getSheets(wb){
+      return {
+        g: sheetRows(wb,'Ticket_Geral')||[],
+    tr: sheetRows(wb,'Ticket_Regime')||[],
+    tra: sheetRows(wb,'Ticket_Regime_Atividade')||[],
+    tc: sheetRows(wb,'Ticket_Clientes')||[],
+    rc: sheetRows(wb,'Resultado_Regime_Com_Peso')||[],
+    segc: sheetRows(wb,'Resultado_Segmento_Com_Peso')||[],
+    td: sheetRows(wb,'Top_Despesas')||[],
+    tda: sheetRows(wb,'Top_Despesas_Adm')||[],
+    rr: sheetRows(wb,'Resumo_Retirada')||[],
+    dre: sheetRows(wb,'DRE_Simplificada')||[]
+  };
+}
+
+    function computeKPIs(S){
+      const g0 = S.g[0] || {};
+      let receitaMensal = asNum(pick(g0,'receita_mensal','Ticket_Geral'));
+      if(!receitaMensal){
+        receitaMensal = sum(S.rc, r=> pick(r,'receita_mensal','Resultado_Regime_Com_Peso')) || 0;
+      }
+
+      let clientes = sum(S.tr, r=> pick(r,'qtd_clientes','Ticket_Regime'));
+      if(!clientes){
+        const uniq = new Set(S.tc.map(r=> pick(r,'cliente','Ticket_Clientes')).filter(Boolean));
+        clientes = uniq.size || 0;
+      }
+
+      let ticketMedio = asNum(pick(g0,'ticket_medio_mensal','Ticket_Geral'));
+      if(!ticketMedio && receitaMensal && clientes) ticketMedio = receitaMensal / clientes;
+
+      let receitaComPeso = sum(S.rc, r=> pick(r,'receita_mensal','Resultado_Regime_Com_Peso')) || receitaMensal;
+      let custoComPeso   = sum(S.rc, r=> pick(r,'custo_mensal','Resultado_Regime_Com_Peso'));
+      let resComPeso     = sum(S.rc, r=> pick(r,'resultado_mensal','Resultado_Regime_Com_Peso'));
+      if(!resComPeso && receitaComPeso && custoComPeso) resComPeso = receitaComPeso - custoComPeso;
+
+      const custoMedio = clientes ? (custoComPeso||0)/clientes : 0;
+      const resultadoMedio = clientes ? (resComPeso||0)/clientes : 0;
+
+      return { receitaMensal, clientes, ticketMedio, custoMedio, resultadoMedio, resComPeso, receitaComPeso };
+    }
+
+    function fillKPIs(k){
+      document.querySelector('#kpi-receita-mensal .value').textContent = BRL.format(k.receitaMensal||0);
+      document.querySelector('#kpi-ticket-medio .value').textContent   = BRL.format(k.ticketMedio||0);
+      document.querySelector('#kpi-qtd-clientes').textContent          = `${INT.format(k.clientes||0)} clientes`;
+
+      document.querySelector('#kpi-custo-medio .value').textContent    = BRL.format(k.custoMedio||0);
+      document.querySelector('#kpi-resultado-medio .value').textContent = BRL.format(k.resultadoMedio||0);
+
+      const mB = k.receitaComPeso ? (k.resComPeso||0)/k.receitaComPeso : 0;
+
+      const kpiRes=document.getElementById('kpi-resultado-com-peso');
+      kpiRes.querySelector('.label').textContent = 'Resultado Total';
+      kpiRes.querySelector('.value').textContent = BRL.format(k.resComPeso||0);
+      const tagB = document.getElementById('kpi-margem-com-peso');
+      tagB.textContent = PCT.format(mB);
+      tagB.classList.toggle('positive', mB>=0);
+      tagB.classList.toggle('negative', mB<0);
+    }
+
+    function rowsResultadoRegime(rows, sheet){
+      const clientesByReg = Object.fromEntries(
+        (window._S?.tr||[]).map(r=>[ String(pick(r,'regime_base','Ticket_Regime')||'').toLowerCase(), asNum(pick(r,'qtd_clientes','Ticket_Regime')) ])
+      );
+
+      return (rows||[]).map(r=>{
+        const regime = String(pick(r,'regime_base',sheet)||'').trim();
+        const rec = asNum(pick(r,'receita_mensal',sheet));
+        const cus = asNum(pick(r,'custo_mensal',sheet));
+        let res = asNum(pick(r,'resultado_mensal',sheet));
+        if(!res && (rec||cus)) res = rec - cus;
+        let cli = asNum(pick(r,'qtd_clientes',sheet));
+        if(!cli) cli = clientesByReg[regime.toLowerCase()]||0;
+        return {
+          regime,
+          clientes:cli,
+          receita:rec,
+          custo:cus,
+          resultado:res,
+          ticketMedio: cli? rec/cli : 0,
+          custoMedio: cli? cus/cli : 0,
+          resultadoMedio: cli? res/cli : 0,
+          margem: rec? res/rec:0
+        };
+      });
+    }
+
+    function rowsResultadoSegmento(rows){
+      return (rows||[]).map(r=>{
+        const regime = pick(r,'regime_base','Resultado_Segmento_Com_Peso')||'';
+        const seg = pick(r,'segmento','Resultado_Segmento_Com_Peso')||'';
+        const cli = asNum(pick(r,'qtd_clientes','Resultado_Segmento_Com_Peso'));
+        const rec = asNum(pick(r,'receita_mensal_segmento','Resultado_Segmento_Com_Peso'));
+        const cus = asNum(pick(r,'custo_mensal_segmento','Resultado_Segmento_Com_Peso'));
+        let res  = asNum(pick(r,'resultado_mensal','Resultado_Segmento_Com_Peso'));
+        if(!res && (rec||cus)) res = rec - cus;
+        return {
+          regime,
+          segmento:seg,
+          clientes:cli,
+          receita:rec,
+          custo:cus,
+          resultado:res,
+          custoMedio: cli? cus/cli:0,
+          resultadoMedio: cli? res/cli:0
+        };
+      });
+    }
+
+    function rowsTicketRegime(rows){
+      return (rows||[]).map(r=>{
+        const regime = pick(r,'regime_base','Ticket_Regime')||'';
+        const cli = asNum(pick(r,'qtd_clientes','Ticket_Regime'));
+        let rec = asNum(pick(r,'receita_mensal','Ticket_Regime'));
+        if(!rec){
+          const byReg = Object.fromEntries((window._S?.rc||[]).map(x=>[ String(pick(x,'regime_base','Resultado_Regime_Com_Peso')||'').toLowerCase(), asNum(pick(x,'receita_mensal','Resultado_Regime_Com_Peso')) ]));
+          rec = byReg[regime.toLowerCase()]||0;
+        }
+        let ticket = asNum(pick(r,'ticket_medio_mensal','Ticket_Regime'));
+        if(!ticket && (rec||cli)) ticket = cli? rec/cli:0;
+        const mediano = asNum(pick(r,'ticket_mediano_mensal','Ticket_Regime'));
+        return {regime, clientes:cli, receita:rec, ticketMedio:ticket, ticketMediano:mediano};
+      });
+    }
+
+    function rowsTicketRegimeAtividade(rows){
+      return (rows||[]).map(r=>{
+        const regime = pick(r,'regime_base','Ticket_Regime_Atividade')||'';
+        const segmento = pick(r,'segmento','Ticket_Regime_Atividade')||'';
+        const clientes = asNum(pick(r,'qtd_clientes','Ticket_Regime_Atividade'));
+        const receita = asNum(pick(r,'receita_mensal','Ticket_Regime_Atividade'));
+        let ticket = asNum(pick(r,'ticket_medio_mensal','Ticket_Regime_Atividade'));
+        if(!ticket && clientes) ticket = clientes? receita/clientes:0;
+        const mediano = asNum(pick(r,'ticket_mediano_mensal','Ticket_Regime_Atividade'));
+        return {regime, segmento, clientes, receita, ticketMedio:ticket, ticketMediano:mediano};
+      });
+    }
+
+    function rowsTicketClientes(rows){
+      return (rows||[]).map(r=>({
+        rank: asNum(pick(r,'rank','Ticket_Clientes')) || asNum(r.rank) || 0,
+        cliente: pick(r,'cliente','Ticket_Clientes')||'',
+        regime: pick(r,'regime_base','Ticket_Clientes')||'',
+        segmento: pick(r,'segmento','Ticket_Clientes')||'',
+        ticket: asNum(pick(r,'ticket_mensal','Ticket_Clientes'))
+      }));
+    }
+
+    function rowsTopDespesas(rows){
+      const mapped = (rows||[]).map((r,i)=>{
+        const valor = asNum(pick(r,'valor','Top_Despesas'));
+        return {
+          rank: asNum(pick(r,'rank','Top_Despesas')) || i+1,
+          grupo: pick(r,'grupo','Top_Despesas') || '',
+          item_nome: pick(r,'item_nome','Top_Despesas') || '',
+          valor
+        };
+      });
+      const tot = sum(mapped, r=> r.valor);
+      let acc = 0;
+      return mapped.map((r,i)=>{
+        const valor = asNum(r.valor);
+        const p = tot? (valor/tot):0;
+        acc += p;
+        return {
+          rank: r.rank || i+1,
+          grupo: r.grupo,
+          item_nome: r.item_nome,
+          valor,
+          perc_total_despesas: p,
+          perc_acumulado: acc
+        };
+      });
+    }
+
+    function rowsTopDespesasAdm(rows){
+      const mapped = (rows||[]).map((r,i)=>({
+        rank: asNum(pick(r,'rank','Top_Despesas_Adm')) || i+1,
+        item_nome: pick(r,'item_nome','Top_Despesas_Adm') || '',
+        valor: asNum(pick(r,'valor','Top_Despesas_Adm'))
+      }));
+      const tot = sum(mapped, r=> r.valor);
+      return mapped.map((r,i)=>{
+        const valor = asNum(r.valor);
+        const p = tot? (valor/tot):0;
+        return { rank: r.rank || i+1, item_nome:r.item_nome, valor, perc_no_grupo:p };
+      });
+    }
+
+    const state = {
+      wb:null,
+      datasets:{},
+      filters:{segmentRegime:null,ticketRegime:null},
+      searchTerm:'',
+      sheetStatus:{missingOptional:[]}
+    };
+
+    const TABLE_CACHE = {};
+
+  const REQUIRED_SHEETS = [
+    'Ticket_Geral',
+    'Resultado_Regime_Com_Peso',
+    'Resumo_Retirada',
+    'DRE_Simplificada'
+  ];
+
+    const OPTIONAL_SHEETS = [
+      'Ticket_Regime',
+      'Ticket_Regime_Atividade',
+      'Ticket_Clientes',
+      'Resultado_Segmento_Com_Peso',
+      'Top_Despesas',
+      'Top_Despesas_Adm'
+    ];
+
+    const showLoading = (show)=>{
+      document.getElementById('loading').classList.toggle('show', show);
+    };
+
+    const showToast = (msg, type='info')=>{
+      const t=document.getElementById('toast');
+      t.textContent=msg;
+      t.className=type;
+      t.style.display='block';
+      clearTimeout(showToast._timer);
+      showToast._timer=setTimeout(()=>t.style.display='none',5000);
+    };
+
+    const showStatus = (msg, type='info')=>{
+      const area=document.getElementById('status-area');
+      area.innerHTML=`<div class="alert ${type}">${msg}</div>`;
+    };
+
+    const percentDiff = (expected, observed)=>{
+      const exp=asNum(expected);
+      const obs=asNum(observed);
+      const denom = Math.abs(exp) > 1e-6 ? Math.abs(exp) : Math.abs(obs) || 1;
+      return (obs-exp)/denom;
+    };
+
+    function registerTableData(targetId, columns, rows){
+      TABLE_CACHE[targetId]={columns,rows};
+    }
+
+    function tableFromData(targetId, columns, rows, options={}){
+      const root=document.getElementById(targetId);
+      if(!root) return;
+      if(!rows||!rows.length){
+        root.innerHTML='<div class="empty-message">Sem dados disponíveis.</div>';
+        registerTableData(targetId, columns, []);
+        return;
+      }
+      const head=columns.map(c=>`<th${c.right?' style="text-align:right"':''}>${c.label||c.key}</th>`).join('');
+      const body=rows.map((r,idx)=>{
+        return '<tr>'+columns.map(c=>{
+          let val=r[c.key];
+          if(c.format) val=c.format(val,r,idx);
+          return `<td${c.right?' style="text-align:right"':''}>${val??''}</td>`;
+        }).join('')+'</tr>';
+      }).join('');
+      root.innerHTML=`<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+      registerTableData(targetId, columns, rows);
+      const trs=root.querySelectorAll('tbody tr');
+      trs.forEach((tr,idx)=>{
+        if(options.getRowClass){
+          const cls=options.getRowClass(rows[idx]);
+          if(cls) tr.classList.add(cls);
+        }
+        if(options.onRowClick){
+          tr.style.cursor='pointer';
+          tr.addEventListener('click',()=>options.onRowClick(rows[idx]));
+        }
+      });
+    }
+
+    const tryGetSheet = (wb,name)=>{
+      if(!wb.SheetNames.includes(name)) return null;
+      try{
         return XLSX.utils.sheet_to_json(wb.Sheets[name]);
-      } catch(e) {
-        console.error(`Erro ao ler aba ${name}:`, e);
+      }catch(e){
+        console.error(`Erro ao ler aba ${name}:`,e);
         return null;
       }
     };
 
-    // ---------- file loaders ----------
     async function fetchRelativeWorkbook(){
       const url='analise_financeira_v3.xlsx';
-      try {
-        const res = await fetch(url);
+      try{
+        const res=await fetch(url);
         if(!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         const arr=await res.arrayBuffer();
         return XLSX.read(arr,{type:'array'});
-      } catch(e) {
+      }catch(e){
         throw new Error(`Não foi possível carregar ${url}. Verifique se o arquivo está na mesma pasta. Erro: ${e.message}`);
       }
     }
-    
+
     async function loadViaPicker(){
-      if (!window.showOpenFilePicker) {
-        throw new Error('Seu navegador não suporta o seletor de arquivos moderno. Use "Selecionar Arquivo" ao invés.');
+      if(!window.showOpenFilePicker){
+        throw new Error('Seu navegador não suporta o seletor de arquivos moderno. Use "Selecionar Arquivo".');
       }
-      try {
-        const [handle] = await window.showOpenFilePicker({
+      try{
+        const [handle]=await window.showOpenFilePicker({
           multiple:false,
           types:[{
-            description:'Planilhas Excel', 
+            description:'Planilhas Excel',
             accept:{
-              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx'], 
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx'],
               'application/vnd.ms-excel':['.xls']
             }
           }]
         });
-        const file = await handle.getFile();
-        const arr = await file.arrayBuffer();
+        const file=await handle.getFile();
+        const arr=await file.arrayBuffer();
         return XLSX.read(arr,{type:'array'});
-      } catch(e) {
-        if (e.name === 'AbortError') {
-          throw new Error('Seleção cancelada pelo usuário.');
-        }
+      }catch(e){
+        if(e.name==='AbortError') throw new Error('Seleção cancelada pelo usuário.');
         throw new Error(`Erro ao abrir arquivo: ${e.message}`);
       }
     }
-    
+
     async function loadViaInput(file){
-      if (!file) throw new Error('Nenhum arquivo selecionado.');
-      try {
-        const arr = await file.arrayBuffer();
+      if(!file) throw new Error('Nenhum arquivo selecionado.');
+      try{
+        const arr=await file.arrayBuffer();
         return XLSX.read(arr,{type:'array'});
-      } catch(e) {
+      }catch(e){
         throw new Error(`Erro ao processar arquivo: ${e.message}`);
       }
     }
 
-    // ---------- validation ----------
-    function validateWorkbook(wb) {
-      const requiredSheets = [
-        'Ticket_Geral',
-        'Resultado_Regime_Sem_Peso',
-        'Resultado_Regime_Com_Peso',
-        'Resumo_Retirada'
-      ];
-      
-      const missing = requiredSheets.filter(s => !wb.SheetNames.includes(s));
-      
-      if (missing.length > 0) {
-        throw new Error(`Abas obrigatórias não encontradas: ${missing.join(', ')}`);
+    function validateWorkbook(wb){
+      const missingRequired=REQUIRED_SHEETS.filter(s=>!wb.SheetNames.includes(s));
+      const missingOptional=OPTIONAL_SHEETS.filter(s=>!wb.SheetNames.includes(s));
+      if(missingRequired.length){
+        throw new Error(`Abas obrigatórias não encontradas: ${missingRequired.join(', ')}`);
       }
-      
-      return true;
+      return {missingOptional};
     }
 
+    function statusBadge(sheet, hasData){
+      document.querySelectorAll(`[data-status-sheet="${sheet}"]`).forEach(el=>{
+        el.dataset.hasData = hasData ? 'true' : 'false';
+        el.classList.toggle('hidden', !!hasData);
+        const card = el.closest('.card');
+        if(card){
+          const anyMissing = Array.from(card.querySelectorAll('[data-status-sheet]')).some(b=>b.dataset.hasData==='false');
+          card.classList.toggle('card-empty', anyMissing);
+        }
+      });
+    }
+
+    function applySearch(rows){
+      if(!state.searchTerm) return rows;
+      const term=state.searchTerm.toLowerCase();
+      return rows.filter(row=>{
+        const keys=['regime','regime_base','segmento','cliente','linha'].filter(key=>row[key]!==undefined && row[key]!==null);
+        if(!keys.length) return true;
+        return keys.some(key=> String(row[key]).toLowerCase().includes(term));
+      });
+    }
+
+    function renderFilterChip(containerId, value, onClear){
+      const container=document.getElementById(containerId);
+      if(!container) return;
+      container.innerHTML='';
+      if(!value) return;
+      const div=document.createElement('div');
+      div.className='chip';
+      div.innerHTML=`Filtro: <strong>${value}</strong> <button type="button" aria-label="Limpar filtro">×</button>`;
+      div.querySelector('button').addEventListener('click',onClear);
+      container.appendChild(div);
+    }
+
+    function renderHero(){
+      fillKPIs(state.kpis || {});
+      const resumo = (state.S?.rr||[])[0]||{};
+      const alfa = resumo.alfa_volume ?? resumo.alfa ?? '';
+      const beta = resumo.beta_ticket ?? resumo.beta ?? '';
+      const abatimento = asNum(resumo.abatimento_rateio_advocacia_aplicado ?? resumo.abatimento_advocacia);
+      document.getElementById('meta-alfa').textContent = alfa || '–';
+      document.getElementById('meta-beta').textContent = beta || '–';
+      document.getElementById('meta-adv').textContent = abatimento ? BRL.format(abatimento) : '–';
+    }
+    function renderResultadoRegime(){
+      const comPeso = applySearch(state.datasets.resultadoRegimeComPeso||[]);
+      tableFromData('tabRegimeComPeso',[
+        {key:'regime',label:'Regime'},
+        {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
+        {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'custo',label:'Custo Mensal',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'custoMedio',label:'Custo Médio',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'resultado',label:'Resultado',right:true,format:v=>{const val=asNum(v);return (val>=0?'<span class="pill positive">':'<span class="pill negative">')+BRL.format(val)+'</span>';},export:v=>asNum(v)},
+        {key:'resultadoMedio',label:'Resultado Médio',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'margem',label:'Margem',right:true,format:v=>PCT.format(asNum(v))}
+      ], comPeso, {
+        onRowClick:(row)=>{
+          state.filters.segmentRegime=row.regime||null;
+          renderSegmentos();
+          renderFilterChip('chip-segmento', state.filters.segmentRegime, ()=>{
+            state.filters.segmentRegime=null;
+            renderSegmentos();
+          });
+        },
+        getRowClass:(row)=> state.filters.segmentRegime && row.regime===state.filters.segmentRegime ? 'row-active' : ''
+      });
+
+      const hasCom = (state.datasets.resultadoRegimeComPeso||[]).some(r=>asNum(r.receita)||asNum(r.resultado));
+      statusBadge('Resultado_Regime_Com_Peso', hasCom);
+    }
+
+    function renderSegmentos(){
+      const rows = state.datasets.resultadoSegmentoComPeso||[];
+      const filtered = rows.filter(row=> !state.filters.segmentRegime || row.regime===state.filters.segmentRegime);
+      const finalRows = applySearch(filtered);
+      tableFromData('tabSegmentoComPeso',[
+        {key:'regime',label:'Regime'},
+        {key:'segmento',label:'Atividade'},
+        {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
+        {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'custo',label:'Custo Mensal',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'custoMedio',label:'Custo Médio',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'resultado',label:'Resultado',right:true,format:v=>{const val=asNum(v);return (val>=0?'<span class="pill positive">':'<span class="pill negative">')+BRL.format(val)+'</span>';},export:v=>asNum(v)},
+        {key:'resultadoMedio',label:'Resultado Médio',right:true,format:v=>BRL.format(asNum(v))}
+      ], finalRows);
+      const hasSeg = (rows||[]).some(r=>asNum(r.receita)||asNum(r.resultado));
+      statusBadge('Resultado_Segmento_Com_Peso', hasSeg);
+      renderFilterChip('chip-segmento', state.filters.segmentRegime, ()=>{
+        state.filters.segmentRegime=null;
+        renderSegmentos();
+      });
+    }
+
+    function renderTickets(){
+      const rowsReg = applySearch(state.datasets.ticketRegime||[]);
+      tableFromData('tabTicketsRegime',[
+        {key:'regime',label:'Regime'},
+        {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
+        {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'ticketMediano',label:'Ticket Mediano',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'perc_receita',label:'% Receita',right:true,format:v=>PCT.format(asNum(v))},
+        {key:'perc_clientes',label:'% Clientes',right:true,format:v=>PCT.format(asNum(v))},
+        {key:'indice_concentracao',label:'Índice Concentração',right:true,format:v=>DEC.format(asNum(v))}
+      ], rowsReg, {
+        onRowClick:(row)=>{
+          state.filters.ticketRegime=row.regime||null;
+          renderTicketDetalhes();
+          renderFilterChip('chip-tickets', state.filters.ticketRegime, ()=>{
+            state.filters.ticketRegime=null;
+            renderTicketDetalhes();
+          });
+        },
+        getRowClass:(row)=> state.filters.ticketRegime && row.regime===state.filters.ticketRegime ? 'row-active' : ''
+      });
+      const hasTk = (state.datasets.ticketRegime||[]).some(r=>asNum(r.receita)||asNum(r.clientes));
+      statusBadge('Ticket_Regime', hasTk);
+      renderTicketDetalhes();
+      renderFilterChip('chip-tickets', state.filters.ticketRegime, ()=>{
+        state.filters.ticketRegime=null;
+        renderTicketDetalhes();
+      });
+    }
+
+    function renderTicketDetalhes(){
+      const filterByRegime = row=> !state.filters.ticketRegime || row.regime===state.filters.ticketRegime;
+      const regAtiv = applySearch((state.datasets.ticketRegimeAtividade||[]).filter(filterByRegime));
+      tableFromData('tabTicketsRegAtiv',[
+        {key:'regime',label:'Regime'},
+        {key:'segmento',label:'Atividade'},
+        {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
+        {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'ticketMediano',label:'Ticket Mediano',right:true,format:v=>BRL.format(asNum(v))}
+      ], regAtiv);
+      statusBadge('Ticket_Regime_Atividade', (state.datasets.ticketRegimeAtividade||[]).length>0);
+
+      const clientesRows = (state.datasets.ticketClientes||[]).filter(filterByRegime);
+      const finalClientes = applySearch(clientesRows).slice(0, state.filters.ticketRegime ? clientesRows.length : 25);
+      tableFromData('tabTicketsClientes',[
+        {key:'rank',label:'#',right:true,format:v=>INT.format(asNum(v))},
+        {key:'cliente',label:'Cliente'},
+        {key:'regime',label:'Regime'},
+        {key:'segmento',label:'Atividade'},
+        {key:'ticket',label:'Ticket Mensal',right:true,format:v=>BRL.format(asNum(v))}
+      ], finalClientes);
+      statusBadge('Ticket_Clientes', (state.datasets.ticketClientes||[]).length>0);
+    }
+
+    function renderTopDespesas(){
+      const top = applySearch(state.datasets.topDespesas||[]);
+      tableFromData('tabTopDespesas',[
+        {key:'rank',label:'#',right:true,format:v=>INT.format(asNum(v))},
+        {key:'grupo',label:'Grupo'},
+        {key:'item_nome',label:'Item'},
+        {key:'valor',label:'Valor',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'perc_total_despesas',label:'% do Total',right:true,format:v=>PCT.format(asNum(v))}
+      ], top);
+      statusBadge('Top_Despesas', (state.datasets.topDespesas||[]).length>0);
+
+      const adm = state.datasets.topDespesasAdm||[];
+      const admFiltered = applySearch(adm);
+      tableFromData('tabTopDespesasAdm',[
+        {key:'rank',label:'#',right:true,format:v=>INT.format(asNum(v))},
+        {key:'item_nome',label:'Item (ADM)'},
+        {key:'valor',label:'Valor',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'perc_no_grupo',label:'% no Grupo',right:true,format:(v,row)=>{
+          const width=Math.min(100,Math.abs(asNum(v))*100);
+          return `<div class="bar-cell"><span>${PCT.format(asNum(v))}</span><div class="bar-wrapper"><div class="bar" style="width:${width}%"></div></div></div>`;
+        },export:v=>asNum(v)}
+      ], admFiltered);
+      statusBadge('Top_Despesas_Adm', (state.datasets.topDespesasAdm||[]).length>0);
+    }
+
+    function renderResumo(){
+      const resumo = applySearch(state.datasets.resumoRetirada||[]);
+      const sampleKeys = Object.keys((resumo[0]||{}));
+      const columns = sampleKeys.map(k=>{
+        const label = k.replace(/_/g,' ');
+        const lower = k.toLowerCase();
+        let format;
+        if(/perc|percent|%/.test(lower)){
+          format=v=>PCT.format(asNum(v));
+        }else if(/receita|resultado|custo|valor|abatimento|retirada|prolabore|advocacia/.test(lower)){
+          format=v=>BRL.format(asNum(v));
+        }else if(/qtd|quantidade|clientes/.test(lower)){
+          format=v=>INT.format(asNum(v));
+        }
+        return {key:k,label,right:!!format,format};
+      });
+      tableFromData('tabResumoRetirada', columns, resumo);
+      statusBadge('Resumo_Retirada', (state.datasets.resumoRetirada||[]).length>0);
+    }
+
+    function renderDRE(){
+      const dre = applySearch(state.datasets.dre||[]);
+      tableFromData('tabDRE',[
+        {key:'linha',label:'Linha'},
+        {key:'valor_mensal',label:'Valor Mensal',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'perc_receita',label:'% Receita',right:true,format:v=>PCT.format(asNum(v))}
+      ], dre, {
+        getRowClass:(row)=>{
+          const linha = String(row.linha||'').toLowerCase();
+          if(linha.includes('margem') || linha.includes('resultado')) return 'row-highlight';
+          return '';
+        }
+      });
+      statusBadge('DRE_Simplificada', (state.datasets.dre||[]).length>0);
+    }
+
+    function renderValidations(){
+      const list=document.getElementById('validations-list');
+      const checks=[];
+      const ticketReg=state.datasets.ticketRegime||[];
+      ticketReg.forEach(row=>{
+        const receita=asNum(row.receita);
+        const reconstruida=asNum(row.ticketMedio)*asNum(row.clientes);
+        const diff=percentDiff(receita,reconstruida);
+        const abs=Math.abs(diff);
+        let status='ok';
+        if(abs>0.03) status='error';
+        else if(abs>0.01) status='warn';
+        checks.push({
+          status,
+          title:`Ticket × Receita — ${row.regime||'Regime'}`,
+          diff,
+          detail:`Receita informada: ${BRL.format(receita)} | Receita reconstruída: ${BRL.format(reconstruida)} | Desvio: ${PCT.format(diff)}`
+        });
+      });
+
+      if(ticketReg.length){
+        const somaReg= sum(ticketReg,r=> r.receita);
+        const geralRaw = state.S?.g?.[0] || {};
+        const geral=asNum(pick(geralRaw,'receita_mensal','Ticket_Geral')) || state.kpis?.receitaMensal || 0;
+        const diff=percentDiff(geral,somaReg);
+        let status='ok';
+        if(Math.abs(diff)>0.03) status='error';
+        else if(Math.abs(diff)>0.01) status='warn';
+        checks.push({
+          status,
+          title:'Receita Total Ticket Regime × Ticket Geral',
+          diff,
+          detail:`Ticket Geral: ${BRL.format(geral)} | Soma Regimes: ${BRL.format(somaReg)} | Desvio: ${PCT.format(diff)}`
+        });
+      }
+
+      const totalCom = sum(state.datasets.resultadoRegimeComPeso||[], r=> r.resultado);
+      const diffCom = percentDiff(state.kpis?.resComPeso||0, totalCom);
+      checks.push({
+        status:Math.abs(diffCom)<=0.03?'ok':'warn',
+        title:'Somatório Resultado Com Peso',
+        diff:diffCom,
+        detail:`KPI: ${BRL.format(state.kpis?.resComPeso||0)} | Soma Regimes: ${BRL.format(totalCom)}`
+      });
+
+      const segmentosRows = state.datasets.resultadoSegmentoComPeso||[];
+      if(segmentosRows.length){
+        const segmentos = new Map();
+        segmentosRows.forEach(row=>{
+          const key=String(row.regime||'').toLowerCase();
+          segmentos.set(key,(segmentos.get(key)||0)+asNum(row.resultado));
+        });
+        const divergencias=[];
+        (state.datasets.resultadoRegimeComPeso||[]).forEach(row=>{
+          const somaSeg = segmentos.get(String(row.regime||'').toLowerCase())||0;
+          const diff=percentDiff(asNum(row.resultado), somaSeg);
+          if(Math.abs(diff)>0.01){
+            divergencias.push(`${row.regime||'Regime'} → ${PCT.format(diff)} (Regime: ${BRL.format(asNum(row.resultado))} | Segmentos: ${BRL.format(somaSeg)})`);
+          }
+        });
+        checks.push({
+          status:divergencias.length?'warn':'ok',
+          title:'Segmento (Regime + Atividade) × Regime Com Peso',
+          diff:0,
+          detail:divergencias.length?divergencias.join('\n'):'Sem divergências relevantes (≤1%)'
+        });
+      }
+
+      const resumo = (state.S?.rr||[])[0];
+      if(resumo){
+        const abatimento=asNum(resumo.abatimento_rateio_advocacia_aplicado ?? resumo.abatimento_advocacia);
+        const adm=state.datasets.topDespesasAdm||[];
+        const advocaciaItens=adm.filter(r=> String(r.item_nome||'').toLowerCase().includes('advocacia'));
+        const totalAdv=advocaciaItens.reduce((acc,r)=>acc+asNum(r.valor),0);
+        let status='warn';
+        let mensagem='Não há itens identificados como advocacia para confrontar.';
+        if(abatimento===0){
+          status='warn';
+          mensagem='Nenhum abatimento informado no resumo.';
+        }else if(Math.abs(totalAdv-abatimento)<=Math.abs(abatimento)*0.05){
+          status='ok';
+          mensagem=`Abatimento aplicado: ${BRL.format(abatimento)} | Itens advocacia: ${BRL.format(totalAdv)}`;
+        }else{
+          status='error';
+          mensagem=`Diferença entre abatimento (${BRL.format(abatimento)}) e itens advocacia (${BRL.format(totalAdv)}).`;
+        }
+        checks.push({
+          status,
+          title:'Abatimento da Advocacia em ADM',
+          diff: abatimento ? percentDiff(abatimento,totalAdv) : 0,
+          detail:mensagem
+        });
+      }
+
+      list.innerHTML='';
+      if(!checks.length){
+        list.innerHTML='<div class="empty-message">Sem validações disponíveis.</div>';
+        return;
+      }
+
+      checks.forEach((check,idx)=>{
+        const row=document.createElement('div');
+        row.className=`validation-row ${check.status}`;
+        const icon = check.status==='ok'?'✅':(check.status==='warn'?'⚠️':'❌');
+        const badgeClass = check.status==='ok'?'badge ok':(check.status==='warn'?'badge warn':'badge error');
+        const diffLabel = `${check.diff>=0?'+':''}${PCT.format(check.diff||0)}`;
+        row.innerHTML=`<div class="header"><div class="header-left">${icon} ${check.title}</div><span class="${badgeClass}">${diffLabel}</span></div>`;
+        const details=document.createElement('details');
+        const summary=document.createElement('summary');
+        summary.textContent='ver cálculo';
+        const pre=document.createElement('div');
+        pre.textContent=check.detail;
+        details.appendChild(summary);
+        details.appendChild(pre);
+        row.appendChild(details);
+        list.appendChild(row);
+      });
+    }
+
+    function renderAll(){
+      renderHero();
+      renderResultadoRegime();
+      renderSegmentos();
+      renderTickets();
+      renderTopDespesas();
+      renderResumo();
+      renderDRE();
+      renderValidations();
+    }
+
+    function exportCsv(targetId){
+      const table=TABLE_CACHE[targetId];
+      if(!table||!table.rows||!table.rows.length){
+        showToast('Sem dados para exportar.', 'error');
+        return;
+      }
+      const {columns,rows}=table;
+      const header=columns.map(c=>`"${(c.label||c.key||'').replace(/"/g,'""')}"`).join(';');
+      const lines=rows.map(row=>columns.map(c=>{
+        const raw = c.export ? c.export(row[c.key], row) : row[c.key];
+        if(raw===null||raw===undefined) return '';
+        if(typeof raw==='number') return raw;
+        return `"${String(raw).replace(/"/g,'""')}"`;
+      }).join(';'));
+      const csv=[header,...lines].join('\n');
+      const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download=`${targetId}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+      showToast('Exportação gerada com sucesso!','success');
+    }
+
+    function renderDashboard(wb){
+      try{
+        const sheetStatus=validateWorkbook(wb);
+        state.wb=wb;
+        state.sheetStatus=sheetStatus;
+        state.filters={segmentRegime:null,ticketRegime:null};
+        state.searchTerm='';
+
+        const S = getSheets(wb);
+        window._S = S;
+        state.S = S;
+
+        const KPIs = computeKPIs(S);
+        state.kpis = KPIs;
+
+        const rrCom = rowsResultadoRegime(S.rc,'Resultado_Regime_Com_Peso');
+        const seg = rowsResultadoSegmento(S.segc);
+        const tkBase = rowsTicketRegime(S.tr);
+        const totalReceitaTk = sum(tkBase,r=>r.receita) || 1;
+        const totalClientesTk = sum(tkBase,r=>r.clientes) || 1;
+        const tkReg = tkBase.map(r=>{
+          const percReceita = totalReceitaTk ? r.receita/totalReceitaTk : 0;
+          const percClientes = totalClientesTk ? r.clientes/totalClientesTk : 0;
+          const indice = percClientes ? percReceita/percClientes : 0;
+          return {...r, perc_receita:percReceita, perc_clientes:percClientes, indice_concentracao:indice};
+        });
+
+        const tkRegAtividade = rowsTicketRegimeAtividade(S.tra);
+        const tkClientes = rowsTicketClientes(S.tc);
+        const topG = rowsTopDespesas(S.td);
+        const topAdm = rowsTopDespesasAdm(S.tda);
+
+        state.datasets={
+          resultadoRegimeComPeso:rrCom,
+          resultadoSegmentoComPeso:seg,
+          ticketRegime:tkReg,
+          ticketRegimeAtividade:tkRegAtividade,
+          ticketClientes:tkClientes,
+          topDespesas:topG,
+          topDespesasAdm:topAdm,
+          resumoRetirada:S.rr,
+          dre:S.dre
+        };
+
+        document.querySelector('.subtitle').textContent = `✅ Planilha carregada com sucesso - ${wb.SheetNames.length} abas`;
+        if(sheetStatus.missingOptional.length){
+          showStatus(`⚠️ Abas opcionais ausentes: ${sheetStatus.missingOptional.join(', ')}`, 'info');
+        }else{
+          showStatus('✅ Dashboard renderizado com sucesso!', 'success');
+        }
+
+        const searchInput=document.getElementById('global-search');
+        if(searchInput && !searchInput.dataset.bound){
+          searchInput.dataset.bound='true';
+          searchInput.addEventListener('input',e=>{
+            state.searchTerm=e.target.value.trim();
+            renderAll();
+          });
+        }
+        if(searchInput){
+          searchInput.value='';
+        }
+
+        document.querySelectorAll('[data-export]').forEach(btn=>{
+          if(btn.dataset.bound) return;
+          btn.dataset.bound='true';
+          btn.addEventListener('click',()=>exportCsv(btn.getAttribute('data-export')));
+        });
+
+        document.querySelectorAll('[data-excel]').forEach(btn=>{
+          if(btn.dataset.bound) return;
+          btn.dataset.bound='true';
+          btn.addEventListener('click',()=>{
+            const sheet=btn.getAttribute('data-excel');
+            showToast(`Abra a aba "${sheet}" na planilha para consultar o detalhamento.`, 'info');
+          });
+        });
+
+        renderAll();
+        showToast('Relatório carregado com sucesso!', 'success');
+      }catch(e){
+        console.error('Erro ao renderizar:', e);
+        showStatus(`❌ Erro ao processar dados: ${e.message}`, 'error');
+        showToast(e.message, 'error');
+      }
+    }
     function testWorkbook(wb) {
       let report = '<div class="diagnostic">';
       report += `<strong>✅ Planilha carregada com sucesso!</strong><br><br>`;
       report += `<strong>Abas encontradas (${wb.SheetNames.length}):</strong><br>`;
-      
-      const expectedSheets = [
-        'Receitas_Base', 'Despesas_Base_Original', 'Despesas_Base_Abatida',
-        'Ticket_Geral', 'Ticket_Regime', 'Ticket_Regime_Atividade', 'Ticket_Clientes',
-        'Resultado_Regime_Sem_Peso', 'Resultado_Regime_Com_Peso',
-        'Resultado_Segmento_Sem_Peso', 'Resultado_Segmento_Com_Peso',
-        'Top_Despesas', 'Top_Despesas_Adm', 'Resumo_Retirada'
-      ];
-      
+
+      const expectedSheets = REQUIRED_SHEETS.concat(OPTIONAL_SHEETS);
+
       expectedSheets.forEach(name => {
         const exists = wb.SheetNames.includes(name);
         const icon = exists ? '✅' : '❌';
@@ -342,296 +1232,107 @@
         }
         report += '<br>';
       });
-      
-      report += '<br><strong>Outras abas:</strong><br>';
-      wb.SheetNames.filter(s => !expectedSheets.includes(s)).forEach(s => {
-        const data = tryGetSheet(wb, s);
-        report += `ℹ️ ${s} (${data ? data.length : 0} linhas)<br>`;
-      });
-      
+
+      const outros = wb.SheetNames.filter(s => !expectedSheets.includes(s));
+      if(outros.length){
+        report += '<br><strong>Outras abas:</strong><br>';
+        outros.forEach(s => {
+          const data = tryGetSheet(wb, s);
+          report += `ℹ️ ${s} (${data ? data.length : 0} linhas)<br>`;
+        });
+      }
+
       report += '</div>';
       showStatus(report, 'info');
     }
 
-    // ---------- rendering ----------
-    function renderDashboard(wb){
-      try {
-        validateWorkbook(wb);
-        
-        document.querySelector('.subtitle').textContent = `✅ Planilha carregada com sucesso - ${wb.SheetNames.length} abas encontradas`;
-        
-        document.querySelectorAll('.tab').forEach(btn=>{
-          btn.addEventListener('click', ()=>{
-            const tab = btn.getAttribute('data-tab');
-            btn.parentElement.querySelectorAll('.tab').forEach(b=> b.classList.remove('active'));
-            btn.classList.add('active');
-            const card = btn.closest('.card');
-            card.querySelectorAll('[id^="tab"]').forEach(el=> el.classList.add('hidden'));
-            const targetTab = card.querySelector('#'+tab);
-            if (targetTab) targetTab.classList.remove('hidden');
-          });
-        });
-
-        const sTicketGeral = tryGetSheet(wb,'Ticket_Geral');
-        const sTicketReg   = tryGetSheet(wb,'Ticket_Regime');
-        const sTicketRegAt = tryGetSheet(wb,'Ticket_Regime_Atividade');
-        const sTicketCli   = tryGetSheet(wb,'Ticket_Clientes');
-        const sResRegA     = tryGetSheet(wb,'Resultado_Regime_Sem_Peso');
-        const sResRegB     = tryGetSheet(wb,'Resultado_Regime_Com_Peso');
-        const sResSegB     = tryGetSheet(wb,'Resultado_Segmento_Com_Peso');
-        const sTopDesp     = tryGetSheet(wb,'Top_Despesas');
-        const sTopDespAdm  = tryGetSheet(wb,'Top_Despesas_Adm');
-        const sResumoRet   = tryGetSheet(wb,'Resumo_Retirada');
-
-        // KPIs
-        if(sTicketGeral && sTicketGeral.length){
-          const g = mapRow(sTicketGeral[0]);
-          const receitaMensal = asNum(g.receita_mensal);
-          const ticketMedio = asNum(g.ticket_medio_mensal);
-          const qtdCli = asNum(g.qtd_clientes);
-          document.querySelector('#kpi-receita-mensal .value').textContent = BRL.format(receitaMensal);
-          document.querySelector('#kpi-ticket-medio .value').textContent = BRL.format(ticketMedio);
-          document.querySelector('#kpi-qtd-clientes').textContent = `${qtdCli} clientes`;
-        }
-
-        const tot = (rows, key)=> (rows||[]).reduce((a,r)=> a + asNum(mapRow(r)[key]), 0);
-        
-        if(sResRegA && sResRegA.length){
-          const totalRec = tot(sResRegA,'receita_mensal');
-          const totalRes = tot(sResRegA,'resultado_mensal');
-          const margem = totalRec? totalRes/totalRec : 0;
-          document.querySelector('#kpi-resultado-sem-peso .value').textContent = BRL.format(totalRes);
-          document.querySelector('#kpi-margem-sem-peso').classList.toggle('positive', margem>=0);
-          document.querySelector('#kpi-margem-sem-peso').classList.toggle('negative', margem<0);
-          document.querySelector('#kpi-margem-sem-peso').textContent = PCT1.format(margem);
-        }
-        
-        if(sResRegB && sResRegB.length){
-          const totalRec = tot(sResRegB,'receita_mensal');
-          const totalRes = tot(sResRegB,'resultado_mensal');
-          const margem = totalRec? totalRes/totalRec : 0;
-          document.querySelector('#kpi-resultado-com-peso .value').textContent = BRL.format(totalRes);
-          document.querySelector('#kpi-margem-com-peso').classList.toggle('positive', margem>=0);
-          document.querySelector('#kpi-margem-com-peso').classList.toggle('negative', margem<0);
-          document.querySelector('#kpi-margem-com-peso').textContent = PCT1.format(margem);
-        }
-
-        if(sResumoRet && sResumoRet.length){
-          const r = mapRow(sResumoRet[0]);
-          document.getElementById('meta-alfa').textContent = r.alfa_volume ?? r.alfavolume ?? '—';
-          document.getElementById('meta-beta').textContent = r.beta_ticket ?? r.beta ?? '—';
-          const adv = asNum(r.abatimento_rateio_advocacia_aplicado);
-          document.getElementById('meta-adv').textContent = BRL.format(adv);
-        }
-
-        // Tables
-        const renderResReg = (target, rows)=>{
-          if(!rows){ tableFromData(target,[],[]); return; }
-          const norm = rows.map(r=> mapRow(r));
-          tableFromData(target,[
-            {key:'regime_base', label:'Regime'},
-            {key:'qtd_clientes', label:'Clientes', right:true, format:v=> DEC2.format(asNum(v))},
-            {key:'ticket_medio_mensal', label:'Ticket Médio', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'receita_mensal', label:'Receita Mensal', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'custo_mensal', label:'Custo Mensal', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'resultado_mensal', label:'Resultado', right:true, format:v=> (asNum(v)>=0?'<span class="pill positive">':'<span class="pill negative">') + BRL.format(asNum(v)) + '</span>'},
-          ], norm);
-        };
-        
-        renderResReg('tabRegimeSemPeso', sResRegA);
-        renderResReg('tabRegimeComPeso', sResRegB);
-
-        if(sResSegB){
-          const rows = sResSegB.map(r=> mapRow(r));
-          tableFromData('tabSegmentoComPeso',[
-            {key:'regime_base', label:'Regime'},
-            {key:'segmento', label:'Atividade'},
-            {key:'qtd_clientes', label:'Clientes', right:true},
-            {key:'receita_mensal_segmento', label:'Receita Mensal', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'custo_mensal_segmento', label:'Custo Mensal', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'resultado_mensal', label:'Resultado', right:true, format:v=> (asNum(v)>=0?'<span class="pill positive">':'<span class="pill negative">') + BRL.format(asNum(v)) + '</span>'},
-          ], rows);
-        }
-
-        if(sTicketReg){
-          const rows = sTicketReg.map(r=> mapRow(r));
-          tableFromData('tabTicketsRegime',[
-            {key:'regime_base', label:'Regime'},
-            {key:'qtd_clientes', label:'Clientes', right:true},
-            {key:'receita_mensal', label:'Receita Mensal', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'ticket_medio_mensal', label:'Ticket Médio', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'ticket_mediano_mensal', label:'Ticket Mediano', right:true, format:v=> BRL.format(asNum(v))},
-          ], rows);
-        }
-        
-        if(sTicketRegAt){
-          const rows = sTicketRegAt.map(r=> mapRow(r));
-          tableFromData('tabTicketsRegAtiv',[
-            {key:'regime_base', label:'Regime'},
-            {key:'segmento', label:'Atividade'},
-            {key:'qtd_clientes', label:'Clientes', right:true},
-            {key:'receita_mensal', label:'Receita Mensal', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'ticket_medio_mensal', label:'Ticket Médio', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'ticket_mediano_mensal', label:'Ticket Mediano', right:true, format:v=> BRL.format(asNum(v))},
-          ], rows);
-        }
-        
-        if(sTicketCli){
-          const rows = sTicketCli.map(r=> mapRow(r)).slice(0,25);
-          tableFromData('tabTicketsClientes',[
-            {key:'rank', label:'#', right:true},
-            {key:'cliente', label:'Cliente'},
-            {key:'regime_base', label:'Regime'},
-            {key:'segmento', label:'Atividade'},
-            {key:'ticket_mensal', label:'Ticket Mensal', right:true, format:v=> BRL.format(asNum(v))},
-          ], rows);
-        }
-        
-        if(sTopDesp){
-          const rows = sTopDesp.map(r=> mapRow(r));
-          tableFromData('tabTopDespesas',[
-            {key:'rank', label:'#', right:true},
-            {key:'grupo', label:'Grupo'},
-            {key:'item_nome', label:'Item'},
-            {key:'valor', label:'Valor', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'perc_total_despesas', label:'% do Total', right:true, format:v=> DEC2.format(asNum(v))+'%'},
-          ], rows);
-        }
-        
-        if(sTopDespAdm){
-          const rows = sTopDespAdm.map(r=> mapRow(r));
-          tableFromData('tabTopDespesasAdm',[
-            {key:'rank', label:'#', right:true},
-            {key:'item_nome', label:'Item (ADM)'},
-            {key:'valor', label:'Valor', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'perc_no_grupo', label:'% no Grupo', right:true, format:v=> DEC2.format(asNum(v))+'%'},
-          ], rows);
-        }
-        
-        if(sResRegA && sResRegB){
-          const A = sResRegA.map(r=> mapRow(r));
-          const B = sResRegB.map(r=> mapRow(r));
-          const byA = Object.fromEntries(A.map(r=> [String(r.regime_base||'').toLowerCase(), r]));
-          const diffs = B.map(r=>{
-            const k=String(r.regime_base||'').toLowerCase(); 
-            const a=byA[k]||{};
-            const da=asNum(a.resultado_mensal); 
-            const db=asNum(r.resultado_mensal);
-            return {regime_base:r.regime_base, resultado_sem_peso:da, resultado_com_peso:db, delta: db-da};
-          }).sort((x,y)=> Math.abs(y.delta)-Math.abs(x.delta));
-          tableFromData('tabComparativo',[
-            {key:'regime_base', label:'Regime'},
-            {key:'resultado_sem_peso', label:'Resultado (Sem Peso)', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'resultado_com_peso', label:'Resultado (Com Peso)', right:true, format:v=> BRL.format(asNum(v))},
-            {key:'delta', label:'Impacto (Δ)', right:true, format:v=> (asNum(v)>=0?'<span class="pill positive">':'<span class="pill negative">') + BRL.format(asNum(v)) + '</span>'},
-          ], diffs);
-        }
-        
-        showStatus('✅ Dashboard renderizado com sucesso!', 'success');
-        showToast('Relatório carregado com sucesso!', 'success');
-        
-      } catch(e) {
-        console.error('Erro ao renderizar:', e);
-        showStatus(`❌ Erro ao processar dados: ${e.message}`, 'error');
-        showToast(e.message, 'error');
-      }
-    }
-
-    // ---------- boot ----------
     async function boot(method='auto'){
       showLoading(true);
       showStatus('⏳ Carregando planilha...', 'info');
-      
-      try {
+
+      try{
         let wb;
-        
-        if (method === 'auto') {
-          // Tenta carregar do mesmo diretório
-          try {
-            wb = await fetchRelativeWorkbook();
+
+        if(method==='auto'){
+          try{
+            wb=await fetchRelativeWorkbook();
             showToast('Planilha carregada automaticamente', 'success');
-          } catch(e1) {
+          }catch(e1){
             console.warn('Fetch automático falhou:', e1.message);
             throw new Error('Não foi possível carregar automaticamente. Use um dos botões para selecionar o arquivo manualmente.');
           }
-        } else if (method === 'picker') {
-          wb = await loadViaPicker();
+        }else if(method==='picker'){
+          wb=await loadViaPicker();
           showToast('Planilha carregada via seletor', 'success');
         }
-        
-        if (wb) {
+
+        if(wb){
           renderDashboard(wb);
         }
-        
-      } catch(e) {
+      }catch(e){
         console.error('Erro no boot:', e);
         showStatus(`❌ ${e.message}<br><br>📌 <strong>Como resolver:</strong><br>
           1. Certifique-se que o arquivo <code>analise_financeira_v3.xlsx</code> está na mesma pasta que este HTML<br>
           2. Use o botão "📁 Selecionar Arquivo" para escolher o arquivo manualmente<br>
           3. Ou use "📂 Seletor do Sistema" (se seu navegador suportar)`, 'error');
         showToast(e.message, 'error');
-      } finally {
+      }finally{
         showLoading(false);
       }
     }
-    
-    // ---------- event listeners ----------
-    document.getElementById('btn-refresh').addEventListener('click', async ()=> {
+
+    document.getElementById('btn-refresh').addEventListener('click', async ()=>{
       await boot('auto');
     });
-    
+
     document.getElementById('btn-picker').addEventListener('click', async ()=>{
       showLoading(true);
-      try { 
-        const wb = await loadViaPicker(); 
-        renderDashboard(wb); 
-      } catch(e) { 
-        showToast(e.message, 'error');
-        showStatus(`❌ ${e.message}`, 'error');
-      } finally {
-        showLoading(false);
-      }
-    });
-    
-    document.getElementById('file-input').addEventListener('change', async (e)=>{
-      const f = e.target.files && e.target.files[0]; 
-      if(!f) return;
-      
-      showLoading(true);
-      try {
-        const wb = await loadViaInput(f); 
+      try{
+        const wb=await loadViaPicker();
         renderDashboard(wb);
-        showToast(`Arquivo ${f.name} carregado com sucesso!`, 'success');
-      } catch(e) {
+      }catch(e){
         showToast(e.message, 'error');
         showStatus(`❌ ${e.message}`, 'error');
-      } finally {
-        showLoading(false);
-      }
-    });
-    
-    document.getElementById('btn-test').addEventListener('click', async ()=>{
-      showLoading(true);
-      try {
-        // Tenta carregar de qualquer fonte disponível
-        let wb;
-        try {
-          wb = await fetchRelativeWorkbook();
-        } catch(e) {
-          wb = await loadViaPicker();
-        }
-        
-        testWorkbook(wb);
-        showToast('Teste concluído! Veja os detalhes acima.', 'info');
-      } catch(e) {
-        showToast(e.message, 'error');
-        showStatus(`❌ ${e.message}`, 'error');
-      } finally {
+      }finally{
         showLoading(false);
       }
     });
 
-    // ---------- inicialização ----------
+    document.getElementById('file-input').addEventListener('change', async (e)=>{
+      const f=e.target.files && e.target.files[0];
+      if(!f) return;
+      showLoading(true);
+      try{
+        const wb=await loadViaInput(f);
+        renderDashboard(wb);
+        showToast(`Arquivo ${f.name} carregado com sucesso!`, 'success');
+      }catch(e){
+        showToast(e.message, 'error');
+        showStatus(`❌ ${e.message}`, 'error');
+      }finally{
+        showLoading(false);
+      }
+    });
+
+    document.getElementById('btn-test').addEventListener('click', async ()=>{
+      showLoading(true);
+      try{
+        let wb;
+        try{
+          wb=await fetchRelativeWorkbook();
+        }catch(e){
+          wb=await loadViaPicker();
+        }
+        testWorkbook(wb);
+        showToast('Teste concluído! Veja os detalhes acima.', 'info');
+      }catch(e){
+        showToast(e.message, 'error');
+        showStatus(`❌ ${e.message}`, 'error');
+      }finally{
+        showLoading(false);
+      }
+    });
+
     boot('auto');
   </script>
 </body>
