@@ -46,8 +46,8 @@ PESOS_COMPLEXIDADE_REGIME: Dict[str, float] = {
     "Simples Nacional": 1.0,
     "Lucro Presumido": 1.2,
     "Lucro Real": 1.6,
-    "PF": 0.6,
-    "Imune/Isenta": 0.6,
+    "PF": 0.0,
+    "Imune/Isenta": 1.2,
     "Paralisada": 0.5,
     "Não informado": 1.0,
 }
