@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Relatório Financeiro - Análise v3</title>
+  <title>Relatório Financeiro - Análise v4</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -82,6 +82,7 @@
     tbody td:first-child{border-left:1px solid #20314a;border-top-left-radius:12px;border-bottom-left-radius:12px}
     tbody td:last-child{border-right:1px solid #20314a;border-top-right-radius:12px;border-bottom-right-radius:12px;text-align:right}
     tbody tr.row-active{background:rgba(96,165,250,.18)}
+    tbody tr.row-highlight{background:rgba(34,197,94,.14)}
     .muted{color:var(--ink-dim)}
     .small{font-size:12px}
     .hidden{display:none}
@@ -139,7 +140,7 @@
     <div class="brand">
       <div class="logo" aria-hidden="true"></div>
       <div>
-        <h1>Relatório Financeiro — Análise v3</h1>
+        <h1>Relatório Financeiro — Análise v4</h1>
         <div class="subtitle">Aguardando carregamento da planilha...</div>
       </div>
     </div>
@@ -156,6 +157,13 @@
   </header>
 
   <main class="container">
+    <!--
+    Relatório Financeiro - Análise v4.0
+    Características:
+    - Visão única COM PESO (complexidade × volume)
+    - DRE Simplificada com margem líquida
+    - Pró-labores separados do resultado operacional
+    -->
     <div id="status-area"></div>
 
     <section class="hero">
@@ -182,13 +190,8 @@
           <div class="value">—</div>
           <div class="desc">Considerando rateio com peso</div>
         </div>
-        <div class="kpi" id="kpi-resultado-sem-peso">
-          <div class="label">Resultado Total (Sem Peso)</div>
-          <div class="value">—</div>
-          <div class="desc"><span id="kpi-margem-sem-peso" class="pill">—</span></div>
-        </div>
         <div class="kpi warn" id="kpi-resultado-com-peso">
-          <div class="label">Resultado Total (Com Peso)</div>
+          <div class="label">Resultado Total</div>
           <div class="value">—</div>
           <div class="desc"><span id="kpi-margem-com-peso" class="pill">—</span></div>
         </div>
@@ -206,18 +209,11 @@
       <div class="card-header">
         <h2 style="margin:0">Resultado por Regime</h2>
         <div class="card-actions">
-          <span class="badge warn hidden" data-status-sheet="Resultado_Regime_Sem_Peso">Sem dados</span>
           <span class="badge warn hidden" data-status-sheet="Resultado_Regime_Com_Peso">Sem dados</span>
-          <button class="btn-sm" data-export="tabRegimeSemPeso">⬇️ Exportar CSV</button>
           <button class="btn-sm" data-export="tabRegimeComPeso">⬇️ Exportar CSV</button>
         </div>
       </div>
-      <div class="tabs">
-        <button class="tab active" data-tab="tabRegimeSemPeso">Sem Peso</button>
-        <button class="tab" data-tab="tabRegimeComPeso">Com Peso</button>
-      </div>
-      <div id="tabRegimeSemPeso"></div>
-      <div id="tabRegimeComPeso" class="hidden"></div>
+      <div id="tabRegimeComPeso"></div>
     </section>
 
     <div class="grid cols-2" style="margin-top:16px">
@@ -292,21 +288,22 @@
       <div id="tabResumoRetirada"></div>
     </section>
 
+    <section class="card" style="margin-top:16px" id="card-dre">
+      <div class="card-header">
+        <h2 style="margin:0">DRE Simplificada</h2>
+        <div class="card-actions">
+          <span class="badge warn hidden" data-status-sheet="DRE_Simplificada">Sem dados</span>
+          <button class="btn-sm" data-export="tabDRE">⬇️ Exportar CSV</button>
+        </div>
+      </div>
+      <div id="tabDRE"></div>
+    </section>
+
     <section class="card" style="margin-top:16px" id="card-validacoes">
       <div class="card-header">
         <h2 style="margin:0">Validações & Confrontos</h2>
       </div>
       <div class="validation-list" id="validations-list"></div>
-    </section>
-
-    <section class="card" style="margin-top:16px" id="card-comparativo">
-      <div class="card-header">
-        <h2 style="margin:0">Comparativo de Impacto — Sem Peso × Com Peso</h2>
-        <div class="card-actions">
-          <button class="btn-sm" data-export="tabComparativo">⬇️ Exportar CSV</button>
-        </div>
-      </div>
-      <div id="tabComparativo"></div>
     </section>
 
   </main>
@@ -373,13 +370,6 @@
         segmento:['segmento','atividade'],
         ticket_mensal:['ticket_mensal','ticket_medio_mensal','ticket']
       },
-      Resultado_Regime_Sem_Peso:{
-        regime_base:['regime_base','regime'],
-        qtd_clientes:['qtd_clientes','clientes'],
-        receita_mensal:['receita_mensal','receita_total_mensal'],
-        custo_mensal:['custo_mensal','custo_total_mensal'],
-        resultado_mensal:['resultado_mensal','lucro_mensal']
-      },
       Resultado_Regime_Com_Peso:{
         regime_base:['regime_base','regime'],
         qtd_clientes:['qtd_clientes','clientes'],
@@ -433,25 +423,23 @@
     function getSheets(wb){
       return {
         g: sheetRows(wb,'Ticket_Geral')||[],
-        tr: sheetRows(wb,'Ticket_Regime')||[],
-        tra: sheetRows(wb,'Ticket_Regime_Atividade')||[],
-        tc: sheetRows(wb,'Ticket_Clientes')||[],
-        rs: sheetRows(wb,'Resultado_Regime_Sem_Peso')||[],
-        rc: sheetRows(wb,'Resultado_Regime_Com_Peso')||[],
-        segc: sheetRows(wb,'Resultado_Segmento_Com_Peso')||[],
-        td: sheetRows(wb,'Top_Despesas')||[],
-        tda: sheetRows(wb,'Top_Despesas_Adm')||[],
-        rr: sheetRows(wb,'Resumo_Retirada')||[]
-      };
-    }
+    tr: sheetRows(wb,'Ticket_Regime')||[],
+    tra: sheetRows(wb,'Ticket_Regime_Atividade')||[],
+    tc: sheetRows(wb,'Ticket_Clientes')||[],
+    rc: sheetRows(wb,'Resultado_Regime_Com_Peso')||[],
+    segc: sheetRows(wb,'Resultado_Segmento_Com_Peso')||[],
+    td: sheetRows(wb,'Top_Despesas')||[],
+    tda: sheetRows(wb,'Top_Despesas_Adm')||[],
+    rr: sheetRows(wb,'Resumo_Retirada')||[],
+    dre: sheetRows(wb,'DRE_Simplificada')||[]
+  };
+}
 
     function computeKPIs(S){
       const g0 = S.g[0] || {};
       let receitaMensal = asNum(pick(g0,'receita_mensal','Ticket_Geral'));
       if(!receitaMensal){
-        const recA = sum(S.rs, r=> pick(r,'receita_mensal','Resultado_Regime_Sem_Peso'));
-        const recB = sum(S.rc, r=> pick(r,'receita_mensal','Resultado_Regime_Com_Peso'));
-        receitaMensal = recA || recB || 0;
+        receitaMensal = sum(S.rc, r=> pick(r,'receita_mensal','Resultado_Regime_Com_Peso')) || 0;
       }
 
       let clientes = sum(S.tr, r=> pick(r,'qtd_clientes','Ticket_Regime'));
@@ -463,42 +451,30 @@
       let ticketMedio = asNum(pick(g0,'ticket_medio_mensal','Ticket_Geral'));
       if(!ticketMedio && receitaMensal && clientes) ticketMedio = receitaMensal / clientes;
 
-      let custoSemPeso = sum(S.rs, r=> pick(r,'custo_mensal','Resultado_Regime_Sem_Peso'));
-      let resSemPeso   = sum(S.rs, r=> pick(r,'resultado_mensal','Resultado_Regime_Sem_Peso'));
-      if(!resSemPeso && receitaMensal && custoSemPeso) resSemPeso = receitaMensal - custoSemPeso;
-
       let receitaComPeso = sum(S.rc, r=> pick(r,'receita_mensal','Resultado_Regime_Com_Peso')) || receitaMensal;
       let custoComPeso   = sum(S.rc, r=> pick(r,'custo_mensal','Resultado_Regime_Com_Peso'));
       let resComPeso     = sum(S.rc, r=> pick(r,'resultado_mensal','Resultado_Regime_Com_Peso'));
       if(!resComPeso && receitaComPeso && custoComPeso) resComPeso = receitaComPeso - custoComPeso;
 
-      const custoMedio = clientes ? (custoComPeso || custoSemPeso)/clientes : 0;
-      const resultadoMedio = clientes ? (resComPeso || resSemPeso)/clientes : 0;
+      const custoMedio = clientes ? (custoComPeso||0)/clientes : 0;
+      const resultadoMedio = clientes ? (resComPeso||0)/clientes : 0;
 
-      return { receitaMensal, clientes, ticketMedio, custoMedio, resultadoMedio, resSemPeso, resComPeso, receitaComPeso };
+      return { receitaMensal, clientes, ticketMedio, custoMedio, resultadoMedio, resComPeso, receitaComPeso };
     }
 
     function fillKPIs(k){
       document.querySelector('#kpi-receita-mensal .value').textContent = BRL.format(k.receitaMensal||0);
       document.querySelector('#kpi-ticket-medio .value').textContent   = BRL.format(k.ticketMedio||0);
-      const clientesLabel = (k.clientes||0) ? `${INT.format(k.clientes||0)} clientes` : '– clientes';
-      document.querySelector('#kpi-qtd-clientes').textContent          = clientesLabel;
+      document.querySelector('#kpi-qtd-clientes').textContent          = `${INT.format(k.clientes||0)} clientes`;
 
       document.querySelector('#kpi-custo-medio .value').textContent    = BRL.format(k.custoMedio||0);
       document.querySelector('#kpi-resultado-medio .value').textContent = BRL.format(k.resultadoMedio||0);
 
-      const mA = k.receitaMensal ? (k.resSemPeso||0)/k.receitaMensal : 0;
       const mB = k.receitaComPeso ? (k.resComPeso||0)/k.receitaComPeso : 0;
 
-      const kpiSem=document.getElementById('kpi-resultado-sem-peso');
-      kpiSem.querySelector('.value').textContent = BRL.format(k.resSemPeso||0);
-      const tagA = document.getElementById('kpi-margem-sem-peso');
-      tagA.textContent = PCT.format(mA);
-      tagA.classList.toggle('positive', mA>=0);
-      tagA.classList.toggle('negative', mA<0);
-
-      const kpiCom=document.getElementById('kpi-resultado-com-peso');
-      kpiCom.querySelector('.value').textContent = BRL.format(k.resComPeso||0);
+      const kpiRes=document.getElementById('kpi-resultado-com-peso');
+      kpiRes.querySelector('.label').textContent = 'Resultado Total';
+      kpiRes.querySelector('.value').textContent = BRL.format(k.resComPeso||0);
       const tagB = document.getElementById('kpi-margem-com-peso');
       tagB.textContent = PCT.format(mB);
       tagB.classList.toggle('positive', mB>=0);
@@ -560,7 +536,7 @@
         const cli = asNum(pick(r,'qtd_clientes','Ticket_Regime'));
         let rec = asNum(pick(r,'receita_mensal','Ticket_Regime'));
         if(!rec){
-          const byReg = Object.fromEntries((window._S?.rs||[]).map(x=>[ String(pick(x,'regime_base','Resultado_Regime_Sem_Peso')||'').toLowerCase(), asNum(pick(x,'receita_mensal','Resultado_Regime_Sem_Peso')) ]));
+          const byReg = Object.fromEntries((window._S?.rc||[]).map(x=>[ String(pick(x,'regime_base','Resultado_Regime_Com_Peso')||'').toLowerCase(), asNum(pick(x,'receita_mensal','Resultado_Regime_Com_Peso')) ]));
           rec = byReg[regime.toLowerCase()]||0;
         }
         let ticket = asNum(pick(r,'ticket_medio_mensal','Ticket_Regime'));
@@ -644,12 +620,12 @@
 
     const TABLE_CACHE = {};
 
-    const REQUIRED_SHEETS = [
-      'Ticket_Geral',
-      'Resultado_Regime_Sem_Peso',
-      'Resultado_Regime_Com_Peso',
-      'Resumo_Retirada'
-    ];
+  const REQUIRED_SHEETS = [
+    'Ticket_Geral',
+    'Resultado_Regime_Com_Peso',
+    'Resumo_Retirada',
+    'DRE_Simplificada'
+  ];
 
     const OPTIONAL_SHEETS = [
       'Ticket_Regime',
@@ -801,7 +777,7 @@
       if(!state.searchTerm) return rows;
       const term=state.searchTerm.toLowerCase();
       return rows.filter(row=>{
-        const keys=['regime','regime_base','segmento','cliente'].filter(key=>row[key]!==undefined && row[key]!==null);
+        const keys=['regime','regime_base','segmento','cliente','linha'].filter(key=>row[key]!==undefined && row[key]!==null);
         if(!keys.length) return true;
         return keys.some(key=> String(row[key]).toLowerCase().includes(term));
       });
@@ -830,19 +806,6 @@
       document.getElementById('meta-adv').textContent = abatimento ? BRL.format(abatimento) : '–';
     }
     function renderResultadoRegime(){
-      const semPeso = applySearch(state.datasets.resultadoRegimeSemPeso||[]);
-      tableFromData('tabRegimeSemPeso',[
-        {key:'regime',label:'Regime'},
-        {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
-        {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'custo',label:'Custo Mensal',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'custoMedio',label:'Custo Médio',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'resultado',label:'Resultado',right:true,format:v=>{const val=asNum(v);return (val>=0?'<span class="pill positive">':'<span class="pill negative">')+BRL.format(val)+'</span>';},export:v=>asNum(v)},
-        {key:'resultadoMedio',label:'Resultado Médio',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'margem',label:'Margem',right:true,format:v=>PCT.format(asNum(v))}
-      ], semPeso);
-
       const comPeso = applySearch(state.datasets.resultadoRegimeComPeso||[]);
       tableFromData('tabRegimeComPeso',[
         {key:'regime',label:'Regime'},
@@ -866,9 +829,7 @@
         getRowClass:(row)=> state.filters.segmentRegime && row.regime===state.filters.segmentRegime ? 'row-active' : ''
       });
 
-      const hasSem = (state.datasets.resultadoRegimeSemPeso||[]).some(r=>asNum(r.receita)||asNum(r.resultado));
       const hasCom = (state.datasets.resultadoRegimeComPeso||[]).some(r=>asNum(r.receita)||asNum(r.resultado));
-      statusBadge('Resultado_Regime_Sem_Peso', hasSem);
       statusBadge('Resultado_Regime_Com_Peso', hasCom);
     }
 
@@ -995,49 +956,20 @@
       statusBadge('Resumo_Retirada', (state.datasets.resumoRetirada||[]).length>0);
     }
 
-    function renderComparativo(){
-      const semPeso = state.datasets.resultadoRegimeSemPeso||[];
-      const comPeso = state.datasets.resultadoRegimeComPeso||[];
-      const bySem = new Map(semPeso.map(r=>[String(r.regime||'').toLowerCase(),r]));
-      const rows = comPeso.map(r=>{
-        const key=String(r.regime||'').toLowerCase();
-        const a=bySem.get(key)||{};
-        const receitaSem=asNum(a.receita);
-        const receitaCom=asNum(r.receita);
-        const resultadoSem=asNum(a.resultado);
-        const resultadoCom=asNum(r.resultado);
-        const margemSem = receitaSem? resultadoSem/receitaSem : 0;
-        const margemCom = receitaCom? resultadoCom/receitaCom : 0;
-        const delta = resultadoCom-resultadoSem;
-        const deltaMargem = margemCom-margemSem;
-        return {
-          regime:r.regime,
-          receita_sem_peso:receitaSem,
-          receita_com_peso:receitaCom,
-          resultado_sem_peso:resultadoSem,
-          resultado_com_peso:resultadoCom,
-          delta,
-          margem_sem:margemSem,
-          margem_com:margemCom,
-          delta_margem:deltaMargem
-        };
-      }).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
-
-      const formatted = applySearch(rows);
-      tableFromData('tabComparativo',[
-        {key:'regime',label:'Regime'},
-        {key:'resultado_sem_peso',label:'Resultado (Sem Peso)',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'resultado_com_peso',label:'Resultado (Com Peso)',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'delta',label:'Impacto (Δ)',right:true,format:v=>{const val=asNum(v);return (val>=0?'<span class="pill positive">':'<span class="pill negative">')+BRL.format(val)+'</span>';},export:v=>asNum(v)},
-        {key:'margem_sem',label:'Margem Sem Peso',right:true,format:v=>PCT.format(asNum(v))},
-        {key:'margem_com',label:'Margem Com Peso',right:true,format:v=>PCT.format(asNum(v))},
-        {key:'delta_margem',label:'Δ Margem (p.p.)',right:true,format:v=>{
-          const val=asNum(v)*100;
-          const label=`${val>=0?'+':'-'}${DEC.format(Math.abs(val))} p.p.`;
-          const cls=asNum(v)>=0?'pill positive':'pill negative';
-          return `<span class="${cls}">${label}</span>`;
-        },export:v=>asNum(v)*100}
-      ], formatted);
+    function renderDRE(){
+      const dre = applySearch(state.datasets.dre||[]);
+      tableFromData('tabDRE',[
+        {key:'linha',label:'Linha'},
+        {key:'valor_mensal',label:'Valor Mensal',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'perc_receita',label:'% Receita',right:true,format:v=>PCT.format(asNum(v))}
+      ], dre, {
+        getRowClass:(row)=>{
+          const linha = String(row.linha||'').toLowerCase();
+          if(linha.includes('margem') || linha.includes('resultado')) return 'row-highlight';
+          return '';
+        }
+      });
+      statusBadge('DRE_Simplificada', (state.datasets.dre||[]).length>0);
     }
 
     function renderValidations(){
@@ -1075,15 +1007,6 @@
           detail:`Ticket Geral: ${BRL.format(geral)} | Soma Regimes: ${BRL.format(somaReg)} | Desvio: ${PCT.format(diff)}`
         });
       }
-
-      const totalSem = sum(state.datasets.resultadoRegimeSemPeso||[], r=> r.resultado);
-      const diffSem = percentDiff(state.kpis?.resSemPeso||0, totalSem);
-      checks.push({
-        status:Math.abs(diffSem)<=0.03?'ok':'warn',
-        title:'Somatório Resultado Sem Peso',
-        diff:diffSem,
-        detail:`KPI: ${BRL.format(state.kpis?.resSemPeso||0)} | Soma Regimes: ${BRL.format(totalSem)}`
-      });
 
       const totalCom = sum(state.datasets.resultadoRegimeComPeso||[], r=> r.resultado);
       const diffCom = percentDiff(state.kpis?.resComPeso||0, totalCom);
@@ -1175,7 +1098,7 @@
       renderTickets();
       renderTopDespesas();
       renderResumo();
-      renderComparativo();
+      renderDRE();
       renderValidations();
     }
 
@@ -1221,7 +1144,6 @@
         const KPIs = computeKPIs(S);
         state.kpis = KPIs;
 
-        const rrSem = rowsResultadoRegime(S.rs,'Resultado_Regime_Sem_Peso');
         const rrCom = rowsResultadoRegime(S.rc,'Resultado_Regime_Com_Peso');
         const seg = rowsResultadoSegmento(S.segc);
         const tkBase = rowsTicketRegime(S.tr);
@@ -1240,7 +1162,6 @@
         const topAdm = rowsTopDespesasAdm(S.tda);
 
         state.datasets={
-          resultadoRegimeSemPeso:rrSem,
           resultadoRegimeComPeso:rrCom,
           resultadoSegmentoComPeso:seg,
           ticketRegime:tkReg,
@@ -1248,7 +1169,8 @@
           ticketClientes:tkClientes,
           topDespesas:topG,
           topDespesasAdm:topAdm,
-          resumoRetirada:S.rr
+          resumoRetirada:S.rr,
+          dre:S.dre
         };
 
         document.querySelector('.subtitle').textContent = `✅ Planilha carregada com sucesso - ${wb.SheetNames.length} abas`;
@@ -1269,20 +1191,6 @@
         if(searchInput){
           searchInput.value='';
         }
-
-        document.querySelectorAll('.tab').forEach(btn=>{
-          if(btn.dataset.bound) return;
-          btn.dataset.bound='true';
-          btn.addEventListener('click',()=>{
-            const tab=btn.getAttribute('data-tab');
-            btn.parentElement.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
-            btn.classList.add('active');
-            const card=btn.closest('.card');
-            card.querySelectorAll('[id^="tab"]').forEach(el=>el.classList.add('hidden'));
-            const target=card.querySelector('#'+tab);
-            if(target) target.classList.remove('hidden');
-          });
-        });
 
         document.querySelectorAll('[data-export]').forEach(btn=>{
           if(btn.dataset.bound) return;
