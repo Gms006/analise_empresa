@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Relatório Financeiro - Análise v3</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{ --bg:#0f172a; --panel:#111827; --ink:#e5e7eb; --ink-dim:#9ca3af; --accent:#22c55e; --shadow:0 10px 30px rgba(0,0,0,.35); --radius:16px; }
+    *{box-sizing:border-box}
+    body{ margin:0; font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,'Noto Sans',sans-serif;
+          color:var(--ink); background: radial-gradient(1200px 700px at 20% -10%, #172554 0%, transparent 60%), radial-gradient(1000px 600px at 90% 0%, #052e16 0%, transparent 60%), var(--bg); }
+    header{ padding:28px 22px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    .brand{ display:flex; align-items:center; gap:14px; }
+    .logo{ width:44px; height:44px; border-radius:12px; background:linear-gradient(135deg,#22c55e 0%,#0ea5e9 60%,#a78bfa 100%); box-shadow:var(--shadow);}
+    h1{font-size:22px;margin:0;font-weight:800}
+    .subtitle{color:var(--ink-dim);font-size:13px;margin-top:2px}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap}
+    button, .btn{ background:linear-gradient(180deg, #1f2937, #111827); color:var(--ink); border:1px solid #334155; padding:10px 14px; border-radius:12px; font-weight:600; font-size:13px; cursor:pointer; transition:all .2s ease; display:inline-flex; align-items:center; gap:8px; }
+    button:hover{ transform:translateY(-1px); box-shadow:var(--shadow); border-color:#475569 }
+    button:disabled{ opacity:0.5; cursor:not-allowed; transform:none; }
+    .btn-primary{ background:linear-gradient(180deg,#22c55e,#16a34a); border-color:#16a34a; color:#03180d }
+    .btn-warn{ background:linear-gradient(180deg,#f59e0b,#d97706); border-color:#d97706; color:#1a0f00 }
+    .container{padding:0 22px 80px}
+    .grid{display:grid;gap:16px}
+    .grid.cols-4{grid-template-columns: repeat(4, minmax(0, 1fr));}
+    .grid.cols-2{grid-template-columns: repeat(2, minmax(0, 1fr));}
+    @media (max-width:900px){ .grid.cols-4{grid-template-columns: repeat(2, minmax(0, 1fr));} .grid.cols-2{grid-template-columns: 1fr;} }
+    .card{ background:linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01)), var(--panel); border:1px solid #233045; border-radius:var(--radius); box-shadow:var(--shadow); padding:16px; }
+    .kpi{ padding:18px; background:linear-gradient(180deg, rgba(34,197,94,.09), rgba(34,197,94,.03)), #0b1324; border:1px solid rgba(34,197,94,.25); border-radius:16px; }
+    .kpi .label{color:#99f6e4;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.8px}
+    .kpi .value{font-size:28px;font-weight:800;margin:8px 0}
+    .kpi .desc{color:var(--ink-dim);font-size:12px}
+    .kpi.warn{ background:linear-gradient(180deg, rgba(245,158,11,.10), rgba(245,158,11,.03)), #0b1324; border-color: rgba(245,158,11,.35); }
+    .alt{  background:linear-gradient(180deg, rgba(96,165,250,.08), rgba(96,165,250,.03)), #0b1324; border-color: rgba(96,165,250,.35); }
+    .tabs{display:flex;gap:8px;margin:6px 0 14px; flex-wrap:wrap;}
+    .tab{padding:8px 12px;border-radius:999px;border:1px solid #334155;background:#0b1324;color:#cbd5e1;font-weight:600;font-size:12px;cursor:pointer}
+    .tab.active{border-color:#60a5fa;background:linear-gradient(180deg, rgba(59,130,246,.18), rgba(59,130,246,.06));color:#e2e8f0}
+    table{width:100%;border-collapse:separate;border-spacing:0 8px}
+    thead th{color:#9ca3af;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:left;padding:8px}
+    tbody td{padding:10px 8px;background:#0a1220;border-top:1px solid #20314a;border-bottom:1px solid #20314a}
+    tbody tr:hover{transform:translateY(-1px)}
+    tbody td:first-child{border-left:1px solid #20314a;border-top-left-radius:12px;border-bottom-left-radius:12px}
+    tbody td:last-child{border-right:1px solid #20314a;border-top-right-radius:12px;border-bottom-right-radius:12px;text-align:right}
+    .muted{color:var(--ink-dim)} .small{font-size:12px} .hidden{display:none}
+    .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:700;background:#0a162b;border:1px solid #22324f;color:#e2e8f0}
+    .pill.negative{ background:#2a0a10; border-color:#4c1d1d; color:#fecaca; }
+    .pill.positive{ background:#062a17; border-color:#064e3b; color:#bbf7d0; }
+    .hero{ border-radius:20px;padding:20px 18px;margin-bottom:18px; background: radial-gradient(800px 300px at 20% -10%, rgba(34,197,94,.18), transparent 60%), linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.01)), #0b1324; border:1px solid #1e293b; box-shadow: var(--shadow);}
+    .divider{height:1px;background:#1f2a3c;margin:14px 0}
+    .tag{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border:1px solid #2b3546;background:#0a1322;border-radius:999px;font-size:12px;color:#cbd5e1}
+    .right{text-align:right}
+    #toast{position:fixed;bottom:18px;right:18px; background:#111827; border:1px solid #334155; padding:12px 14px; border-radius:10px; color:#e2e8f0; box-shadow:var(--shadow); display:none; max-width:400px;}
+    #toast.error{border-color:#dc2626; background:#1f0808;}
+    #toast.success{border-color:#22c55e; background:#062a17;}
+    #loading{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);display:none;align-items:center;justify-content:center;z-index:9999;}
+    #loading.show{display:flex;}
+    .spinner{width:60px;height:60px;border:4px solid #334155;border-top-color:#22c55e;border-radius:50%;animation:spin 1s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    .alert{padding:16px;border-radius:12px;margin:16px 0;border:1px solid;}
+    .alert.error{background:#2a0a10;border-color:#4c1d1d;color:#fecaca;}
+    .alert.info{background:#0a1b2e;border-color:#1e3a5f;color:#93c5fd;}
+    .alert.success{background:#062a17;border-color:#064e3b;color:#bbf7d0;}
+    .diagnostic{font-family:monospace;font-size:11px;background:#0a0f1a;padding:12px;border-radius:8px;margin-top:8px;max-height:200px;overflow-y:auto;}
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div id="loading"><div class="spinner"></div></div>
+  
+  <header>
+    <div class="brand">
+      <div class="logo" aria-hidden="true"></div>
+      <div>
+        <h1>Relatório Financeiro — Análise v3</h1>
+        <div class="subtitle">Aguardando carregamento da planilha...</div>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="btn-refresh">🔄 Recarregar</button>
+      <label class="btn">
+        <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none">
+        📁 Selecionar Arquivo
+      </label>
+      <button class="btn" id="btn-picker">📂 Seletor do Sistema</button>
+      <button class="btn btn-warn" id="btn-test">🔍 Testar Planilha</button>
+      <button class="btn" onclick="window.print()">🖨️ Imprimir</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div id="status-area"></div>
+
+    <section class="hero">
+      <h2>Visão Executiva</h2>
+      <p class="muted">Principais resultados e impactos — tickets, custos alocados e resultado por regime.</p>
+      <div class="grid cols-4">
+        <div class="kpi" id="kpi-receita-mensal">
+          <div class="label">Receita Mensal Total</div>
+          <div class="value">—</div>
+          <div class="desc">Com base em honorários (CORE)</div>
+        </div>
+        <div class="kpi alt" id="kpi-ticket-medio">
+          <div class="label">Ticket Médio Mensal</div>
+          <div class="value">—</div>
+          <div class="desc"><span id="kpi-qtd-clientes" class="pill">— clientes</span></div>
+        </div>
+        <div class="kpi" id="kpi-resultado-sem-peso">
+          <div class="label">Resultado Total (Sem Peso)</div>
+          <div class="value">—</div>
+          <div class="desc"><span id="kpi-margem-sem-peso" class="pill">—</span></div>
+        </div>
+        <div class="kpi warn" id="kpi-resultado-com-peso">
+          <div class="label">Resultado Total (Com Peso)</div>
+          <div class="value">—</div>
+          <div class="desc"><span id="kpi-margem-com-peso" class="pill">—</span></div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="tag">Alfa (volume): <strong id="meta-alfa">—</strong></div>
+      <div class="tag">Beta (ticket): <strong id="meta-beta">—</strong></div>
+      <div class="tag">Abatimento Advocacia em ADM: <strong id="meta-adv">—</strong></div>
+    </section>
+
+    <section class="card">
+      <div class="tabs">
+        <button class="tab active" data-tab="tabRegimeSemPeso">Resultado por Regime (Sem Peso)</button>
+        <button class="tab" data-tab="tabRegimeComPeso">Resultado por Regime (Com Peso)</button>
+      </div>
+      <div id="tabRegimeSemPeso"></div>
+      <div id="tabRegimeComPeso" class="hidden"></div>
+    </section>
+
+    <div class="grid cols-2" style="margin-top:16px">
+      <section class="card">
+        <h2 style="margin:0 0 10px 0">Resultado por Regime + Atividade (Com Peso)</h2>
+        <div id="tabSegmentoComPeso"></div>
+      </section>
+      <section class="card">
+        <h2 style="margin:0 0 10px 0">Tickets Médios</h2>
+        <div class="tabs">
+          <button class="tab active" data-tab="tabTicketsRegime">Por Regime</button>
+          <button class="tab" data-tab="tabTicketsRegAtiv">Regime + Atividade</button>
+          <button class="tab" data-tab="tabTicketsClientes">Top Clientes</button>
+        </div>
+        <div id="tabTicketsRegime"></div>
+        <div id="tabTicketsRegAtiv" class="hidden"></div>
+        <div id="tabTicketsClientes" class="hidden"></div>
+      </section>
+    </div>
+
+    <div class="grid cols-2" style="margin-top:16px">
+      <section class="card">
+        <h2 style="margin:0 0 10px 0">Top Despesas (Geral)</h2>
+        <div id="tabTopDespesas"></div>
+      </section>
+      <section class="card">
+        <h2 style="margin:0 0 10px 0">Top Despesas Administrativas</h2>
+        <div id="tabTopDespesasAdm"></div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top:16px">
+      <h2 style="margin:0 0 10px 0">Resumo de Retirada (sem pró-labore no resultado)</h2>
+      <div id="tabResumoRetirada"></div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <h2 style="margin:0 0 10px 0">Comparativo de Impacto — Sem Peso × Com Peso</h2>
+      <div id="tabComparativo"></div>
+    </section>
+
+  </main>
+  <div id="toast"></div>
+
+  <script>
+    // ---------- utils ----------
+    const BRL = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
+    const DEC2 = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:2, minimumFractionDigits:0});
+    const PCT1 = new Intl.NumberFormat('pt-BR',{style:'percent', maximumFractionDigits:1});
+    
+    const showLoading = (show)=>{ document.getElementById('loading').classList.toggle('show', show); };
+    
+    const showToast = (msg, type='info')=>{ 
+      const t=document.getElementById('toast'); 
+      t.textContent=msg; 
+      t.className = type;
+      t.style.display='block'; 
+      setTimeout(()=> t.style.display='none', 5000); 
+    };
+    
+    const showStatus = (msg, type='info')=>{
+      const area = document.getElementById('status-area');
+      area.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    };
+    
+    const asNum = (v)=>{
+      if (v===null || v===undefined) return 0;
+      if (typeof v==='number') return v;
+      if (typeof v==='string'){ 
+        const s=v.replace(/[R$\s\.]/g,'').replace(',','.'); 
+        const n=parseFloat(s); 
+        return isNaN(n)?0:n; 
+      }
+      return Number(v)||0;
+    };
+    
+    const normalizeKey = (k)=> String(k||'').trim().toLowerCase()
+      .replace(/[àáâãäå]/g,'a')
+      .replace(/[èéêë]/g,'e')
+      .replace(/[ìíîï]/g,'i')
+      .replace(/[òóôõö]/g,'o')
+      .replace(/[ùúûü]/g,'u')
+      .replace(/[ç]/g,'c')
+      .replace(/\s+/g,'_')
+      .replace(/[^\w_]/g,'');
+    
+    const mapRow = (row)=>{ 
+      const m={}; 
+      Object.keys(row||{}).forEach(k=> {
+        const nk = normalizeKey(k);
+        m[nk]=row[k];
+      }); 
+      return m; 
+    };
+    
+    function tableFromData(targetId, columns, rows){
+      const root=document.getElementById(targetId); 
+      if(!root) return;
+      if(!rows||!rows.length){ 
+        root.innerHTML='<div class="muted small">Sem dados disponíveis.</div>'; 
+        return; 
+      }
+      const head=columns.map(c=>`<th>${c.label||c.key}</th>`).join('');
+      const body=rows.map(r=>'<tr>'+columns.map(c=>{
+        let val=r[c.key]; 
+        if(c.format) val=c.format(val, r);
+        return `<td ${c.right?'style="text-align:right"':''}>${val??''}</td>`;
+      }).join('')+'</tr>').join('');
+      root.innerHTML=`<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+    
+    const tryGetSheet = (wb,name)=> {
+      if (!wb.SheetNames.includes(name)) return null;
+      try {
+        return XLSX.utils.sheet_to_json(wb.Sheets[name]);
+      } catch(e) {
+        console.error(`Erro ao ler aba ${name}:`, e);
+        return null;
+      }
+    };
+
+    // ---------- file loaders ----------
+    async function fetchRelativeWorkbook(){
+      const url='analise_financeira_v3.xlsx';
+      try {
+        const res = await fetch(url);
+        if(!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        const arr=await res.arrayBuffer();
+        return XLSX.read(arr,{type:'array'});
+      } catch(e) {
+        throw new Error(`Não foi possível carregar ${url}. Verifique se o arquivo está na mesma pasta. Erro: ${e.message}`);
+      }
+    }
+    
+    async function loadViaPicker(){
+      if (!window.showOpenFilePicker) {
+        throw new Error('Seu navegador não suporta o seletor de arquivos moderno. Use "Selecionar Arquivo" ao invés.');
+      }
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          multiple:false,
+          types:[{
+            description:'Planilhas Excel', 
+            accept:{
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx'], 
+              'application/vnd.ms-excel':['.xls']
+            }
+          }]
+        });
+        const file = await handle.getFile();
+        const arr = await file.arrayBuffer();
+        return XLSX.read(arr,{type:'array'});
+      } catch(e) {
+        if (e.name === 'AbortError') {
+          throw new Error('Seleção cancelada pelo usuário.');
+        }
+        throw new Error(`Erro ao abrir arquivo: ${e.message}`);
+      }
+    }
+    
+    async function loadViaInput(file){
+      if (!file) throw new Error('Nenhum arquivo selecionado.');
+      try {
+        const arr = await file.arrayBuffer();
+        return XLSX.read(arr,{type:'array'});
+      } catch(e) {
+        throw new Error(`Erro ao processar arquivo: ${e.message}`);
+      }
+    }
+
+    // ---------- validation ----------
+    function validateWorkbook(wb) {
+      const requiredSheets = [
+        'Ticket_Geral',
+        'Resultado_Regime_Sem_Peso',
+        'Resultado_Regime_Com_Peso',
+        'Resumo_Retirada'
+      ];
+      
+      const missing = requiredSheets.filter(s => !wb.SheetNames.includes(s));
+      
+      if (missing.length > 0) {
+        throw new Error(`Abas obrigatórias não encontradas: ${missing.join(', ')}`);
+      }
+      
+      return true;
+    }
+
+    function testWorkbook(wb) {
+      let report = '<div class="diagnostic">';
+      report += `<strong>✅ Planilha carregada com sucesso!</strong><br><br>`;
+      report += `<strong>Abas encontradas (${wb.SheetNames.length}):</strong><br>`;
+      
+      const expectedSheets = [
+        'Receitas_Base', 'Despesas_Base_Original', 'Despesas_Base_Abatida',
+        'Ticket_Geral', 'Ticket_Regime', 'Ticket_Regime_Atividade', 'Ticket_Clientes',
+        'Resultado_Regime_Sem_Peso', 'Resultado_Regime_Com_Peso',
+        'Resultado_Segmento_Sem_Peso', 'Resultado_Segmento_Com_Peso',
+        'Top_Despesas', 'Top_Despesas_Adm', 'Resumo_Retirada'
+      ];
+      
+      expectedSheets.forEach(name => {
+        const exists = wb.SheetNames.includes(name);
+        const icon = exists ? '✅' : '❌';
+        report += `${icon} ${name}`;
+        if (exists) {
+          const data = tryGetSheet(wb, name);
+          report += ` (${data ? data.length : 0} linhas)`;
+        }
+        report += '<br>';
+      });
+      
+      report += '<br><strong>Outras abas:</strong><br>';
+      wb.SheetNames.filter(s => !expectedSheets.includes(s)).forEach(s => {
+        const data = tryGetSheet(wb, s);
+        report += `ℹ️ ${s} (${data ? data.length : 0} linhas)<br>`;
+      });
+      
+      report += '</div>';
+      showStatus(report, 'info');
+    }
+
+    // ---------- rendering ----------
+    function renderDashboard(wb){
+      try {
+        validateWorkbook(wb);
+        
+        document.querySelector('.subtitle').textContent = `✅ Planilha carregada com sucesso - ${wb.SheetNames.length} abas encontradas`;
+        
+        document.querySelectorAll('.tab').forEach(btn=>{
+          btn.addEventListener('click', ()=>{
+            const tab = btn.getAttribute('data-tab');
+            btn.parentElement.querySelectorAll('.tab').forEach(b=> b.classList.remove('active'));
+            btn.classList.add('active');
+            const card = btn.closest('.card');
+            card.querySelectorAll('[id^="tab"]').forEach(el=> el.classList.add('hidden'));
+            const targetTab = card.querySelector('#'+tab);
+            if (targetTab) targetTab.classList.remove('hidden');
+          });
+        });
+
+        const sTicketGeral = tryGetSheet(wb,'Ticket_Geral');
+        const sTicketReg   = tryGetSheet(wb,'Ticket_Regime');
+        const sTicketRegAt = tryGetSheet(wb,'Ticket_Regime_Atividade');
+        const sTicketCli   = tryGetSheet(wb,'Ticket_Clientes');
+        const sResRegA     = tryGetSheet(wb,'Resultado_Regime_Sem_Peso');
+        const sResRegB     = tryGetSheet(wb,'Resultado_Regime_Com_Peso');
+        const sResSegB     = tryGetSheet(wb,'Resultado_Segmento_Com_Peso');
+        const sTopDesp     = tryGetSheet(wb,'Top_Despesas');
+        const sTopDespAdm  = tryGetSheet(wb,'Top_Despesas_Adm');
+        const sResumoRet   = tryGetSheet(wb,'Resumo_Retirada');
+
+        // KPIs
+        if(sTicketGeral && sTicketGeral.length){
+          const g = mapRow(sTicketGeral[0]);
+          const receitaMensal = asNum(g.receita_mensal);
+          const ticketMedio = asNum(g.ticket_medio_mensal);
+          const qtdCli = asNum(g.qtd_clientes);
+          document.querySelector('#kpi-receita-mensal .value').textContent = BRL.format(receitaMensal);
+          document.querySelector('#kpi-ticket-medio .value').textContent = BRL.format(ticketMedio);
+          document.querySelector('#kpi-qtd-clientes').textContent = `${qtdCli} clientes`;
+        }
+
+        const tot = (rows, key)=> (rows||[]).reduce((a,r)=> a + asNum(mapRow(r)[key]), 0);
+        
+        if(sResRegA && sResRegA.length){
+          const totalRec = tot(sResRegA,'receita_mensal');
+          const totalRes = tot(sResRegA,'resultado_mensal');
+          const margem = totalRec? totalRes/totalRec : 0;
+          document.querySelector('#kpi-resultado-sem-peso .value').textContent = BRL.format(totalRes);
+          document.querySelector('#kpi-margem-sem-peso').classList.toggle('positive', margem>=0);
+          document.querySelector('#kpi-margem-sem-peso').classList.toggle('negative', margem<0);
+          document.querySelector('#kpi-margem-sem-peso').textContent = PCT1.format(margem);
+        }
+        
+        if(sResRegB && sResRegB.length){
+          const totalRec = tot(sResRegB,'receita_mensal');
+          const totalRes = tot(sResRegB,'resultado_mensal');
+          const margem = totalRec? totalRes/totalRec : 0;
+          document.querySelector('#kpi-resultado-com-peso .value').textContent = BRL.format(totalRes);
+          document.querySelector('#kpi-margem-com-peso').classList.toggle('positive', margem>=0);
+          document.querySelector('#kpi-margem-com-peso').classList.toggle('negative', margem<0);
+          document.querySelector('#kpi-margem-com-peso').textContent = PCT1.format(margem);
+        }
+
+        if(sResumoRet && sResumoRet.length){
+          const r = mapRow(sResumoRet[0]);
+          document.getElementById('meta-alfa').textContent = r.alfa_volume ?? r.alfavolume ?? '—';
+          document.getElementById('meta-beta').textContent = r.beta_ticket ?? r.beta ?? '—';
+          const adv = asNum(r.abatimento_rateio_advocacia_aplicado);
+          document.getElementById('meta-adv').textContent = BRL.format(adv);
+        }
+
+        // Tables
+        const renderResReg = (target, rows)=>{
+          if(!rows){ tableFromData(target,[],[]); return; }
+          const norm = rows.map(r=> mapRow(r));
+          tableFromData(target,[
+            {key:'regime_base', label:'Regime'},
+            {key:'qtd_clientes', label:'Clientes', right:true, format:v=> DEC2.format(asNum(v))},
+            {key:'ticket_medio_mensal', label:'Ticket Médio', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'receita_mensal', label:'Receita Mensal', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'custo_mensal', label:'Custo Mensal', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'resultado_mensal', label:'Resultado', right:true, format:v=> (asNum(v)>=0?'<span class="pill positive">':'<span class="pill negative">') + BRL.format(asNum(v)) + '</span>'},
+          ], norm);
+        };
+        
+        renderResReg('tabRegimeSemPeso', sResRegA);
+        renderResReg('tabRegimeComPeso', sResRegB);
+
+        if(sResSegB){
+          const rows = sResSegB.map(r=> mapRow(r));
+          tableFromData('tabSegmentoComPeso',[
+            {key:'regime_base', label:'Regime'},
+            {key:'segmento', label:'Atividade'},
+            {key:'qtd_clientes', label:'Clientes', right:true},
+            {key:'receita_mensal_segmento', label:'Receita Mensal', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'custo_mensal_segmento', label:'Custo Mensal', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'resultado_mensal', label:'Resultado', right:true, format:v=> (asNum(v)>=0?'<span class="pill positive">':'<span class="pill negative">') + BRL.format(asNum(v)) + '</span>'},
+          ], rows);
+        }
+
+        if(sTicketReg){
+          const rows = sTicketReg.map(r=> mapRow(r));
+          tableFromData('tabTicketsRegime',[
+            {key:'regime_base', label:'Regime'},
+            {key:'qtd_clientes', label:'Clientes', right:true},
+            {key:'receita_mensal', label:'Receita Mensal', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'ticket_medio_mensal', label:'Ticket Médio', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'ticket_mediano_mensal', label:'Ticket Mediano', right:true, format:v=> BRL.format(asNum(v))},
+          ], rows);
+        }
+        
+        if(sTicketRegAt){
+          const rows = sTicketRegAt.map(r=> mapRow(r));
+          tableFromData('tabTicketsRegAtiv',[
+            {key:'regime_base', label:'Regime'},
+            {key:'segmento', label:'Atividade'},
+            {key:'qtd_clientes', label:'Clientes', right:true},
+            {key:'receita_mensal', label:'Receita Mensal', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'ticket_medio_mensal', label:'Ticket Médio', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'ticket_mediano_mensal', label:'Ticket Mediano', right:true, format:v=> BRL.format(asNum(v))},
+          ], rows);
+        }
+        
+        if(sTicketCli){
+          const rows = sTicketCli.map(r=> mapRow(r)).slice(0,25);
+          tableFromData('tabTicketsClientes',[
+            {key:'rank', label:'#', right:true},
+            {key:'cliente', label:'Cliente'},
+            {key:'regime_base', label:'Regime'},
+            {key:'segmento', label:'Atividade'},
+            {key:'ticket_mensal', label:'Ticket Mensal', right:true, format:v=> BRL.format(asNum(v))},
+          ], rows);
+        }
+        
+        if(sTopDesp){
+          const rows = sTopDesp.map(r=> mapRow(r));
+          tableFromData('tabTopDespesas',[
+            {key:'rank', label:'#', right:true},
+            {key:'grupo', label:'Grupo'},
+            {key:'item_nome', label:'Item'},
+            {key:'valor', label:'Valor', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'perc_total_despesas', label:'% do Total', right:true, format:v=> DEC2.format(asNum(v))+'%'},
+          ], rows);
+        }
+        
+        if(sTopDespAdm){
+          const rows = sTopDespAdm.map(r=> mapRow(r));
+          tableFromData('tabTopDespesasAdm',[
+            {key:'rank', label:'#', right:true},
+            {key:'item_nome', label:'Item (ADM)'},
+            {key:'valor', label:'Valor', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'perc_no_grupo', label:'% no Grupo', right:true, format:v=> DEC2.format(asNum(v))+'%'},
+          ], rows);
+        }
+        
+        if(sResRegA && sResRegB){
+          const A = sResRegA.map(r=> mapRow(r));
+          const B = sResRegB.map(r=> mapRow(r));
+          const byA = Object.fromEntries(A.map(r=> [String(r.regime_base||'').toLowerCase(), r]));
+          const diffs = B.map(r=>{
+            const k=String(r.regime_base||'').toLowerCase(); 
+            const a=byA[k]||{};
+            const da=asNum(a.resultado_mensal); 
+            const db=asNum(r.resultado_mensal);
+            return {regime_base:r.regime_base, resultado_sem_peso:da, resultado_com_peso:db, delta: db-da};
+          }).sort((x,y)=> Math.abs(y.delta)-Math.abs(x.delta));
+          tableFromData('tabComparativo',[
+            {key:'regime_base', label:'Regime'},
+            {key:'resultado_sem_peso', label:'Resultado (Sem Peso)', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'resultado_com_peso', label:'Resultado (Com Peso)', right:true, format:v=> BRL.format(asNum(v))},
+            {key:'delta', label:'Impacto (Δ)', right:true, format:v=> (asNum(v)>=0?'<span class="pill positive">':'<span class="pill negative">') + BRL.format(asNum(v)) + '</span>'},
+          ], diffs);
+        }
+        
+        showStatus('✅ Dashboard renderizado com sucesso!', 'success');
+        showToast('Relatório carregado com sucesso!', 'success');
+        
+      } catch(e) {
+        console.error('Erro ao renderizar:', e);
+        showStatus(`❌ Erro ao processar dados: ${e.message}`, 'error');
+        showToast(e.message, 'error');
+      }
+    }
+
+    // ---------- boot ----------
+    async function boot(method='auto'){
+      showLoading(true);
+      showStatus('⏳ Carregando planilha...', 'info');
+      
+      try {
+        let wb;
+        
+        if (method === 'auto') {
+          // Tenta carregar do mesmo diretório
+          try {
+            wb = await fetchRelativeWorkbook();
+            showToast('Planilha carregada automaticamente', 'success');
+          } catch(e1) {
+            console.warn('Fetch automático falhou:', e1.message);
+            throw new Error('Não foi possível carregar automaticamente. Use um dos botões para selecionar o arquivo manualmente.');
+          }
+        } else if (method === 'picker') {
+          wb = await loadViaPicker();
+          showToast('Planilha carregada via seletor', 'success');
+        }
+        
+        if (wb) {
+          renderDashboard(wb);
+        }
+        
+      } catch(e) {
+        console.error('Erro no boot:', e);
+        showStatus(`❌ ${e.message}<br><br>📌 <strong>Como resolver:</strong><br>
+          1. Certifique-se que o arquivo <code>analise_financeira_v3.xlsx</code> está na mesma pasta que este HTML<br>
+          2. Use o botão "📁 Selecionar Arquivo" para escolher o arquivo manualmente<br>
+          3. Ou use "📂 Seletor do Sistema" (se seu navegador suportar)`, 'error');
+        showToast(e.message, 'error');
+      } finally {
+        showLoading(false);
+      }
+    }
+    
+    // ---------- event listeners ----------
+    document.getElementById('btn-refresh').addEventListener('click', async ()=> {
+      await boot('auto');
+    });
+    
+    document.getElementById('btn-picker').addEventListener('click', async ()=>{
+      showLoading(true);
+      try { 
+        const wb = await loadViaPicker(); 
+        renderDashboard(wb); 
+      } catch(e) { 
+        showToast(e.message, 'error');
+        showStatus(`❌ ${e.message}`, 'error');
+      } finally {
+        showLoading(false);
+      }
+    });
+    
+    document.getElementById('file-input').addEventListener('change', async (e)=>{
+      const f = e.target.files && e.target.files[0]; 
+      if(!f) return;
+      
+      showLoading(true);
+      try {
+        const wb = await loadViaInput(f); 
+        renderDashboard(wb);
+        showToast(`Arquivo ${f.name} carregado com sucesso!`, 'success');
+      } catch(e) {
+        showToast(e.message, 'error');
+        showStatus(`❌ ${e.message}`, 'error');
+      } finally {
+        showLoading(false);
+      }
+    });
+    
+    document.getElementById('btn-test').addEventListener('click', async ()=>{
+      showLoading(true);
+      try {
+        // Tenta carregar de qualquer fonte disponível
+        let wb;
+        try {
+          wb = await fetchRelativeWorkbook();
+        } catch(e) {
+          wb = await loadViaPicker();
+        }
+        
+        testWorkbook(wb);
+        showToast('Teste concluído! Veja os detalhes acima.', 'info');
+      } catch(e) {
+        showToast(e.message, 'error');
+        showStatus(`❌ ${e.message}`, 'error');
+      } finally {
+        showLoading(false);
+      }
+    });
+
+    // ---------- inicialização ----------
+    boot('auto');
+  </script>
+</body>
+</html>
