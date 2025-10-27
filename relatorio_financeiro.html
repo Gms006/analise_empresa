@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Relatório Financeiro Consolidado</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: #f4f6f8;
+      color: #1f2933;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background: #f4f6f8;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+    h1 {
+      margin-bottom: 8px;
+    }
+    p.muted {
+      color: #596778;
+      margin-top: 0;
+    }
+    .card {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(31, 41, 51, 0.08);
+      padding: 16px;
+      margin-top: 24px;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .card-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: #e5effe;
+      color: #1f4b99;
+    }
+    .badge.warn {
+      background: #fdecea;
+      color: #b42318;
+    }
+    .badge.ok {
+      background: #e9f5ee;
+      color: #1b806a;
+    }
+    .badge.error {
+      background: #fdecea;
+      color: #b42318;
+    }
+    .badge.hidden {
+      display: none;
+    }
+    .hidden {
+      display: none !important;
+    }
+    .btn-sm {
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      background: #1f4b99;
+      color: white;
+    }
+    .tabs {
+      display: flex;
+      gap: 6px;
+      margin-top: 16px;
+      margin-bottom: 12px;
+    }
+    .tab {
+      padding: 6px 14px;
+      border-radius: 999px;
+      border: 1px solid #c7d2e1;
+      background: #f4f6f8;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .tab.active {
+      background: #1f4b99;
+      border-color: #1f4b99;
+      color: #ffffff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 4px;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e3e8ef;
+      font-size: 14px;
+    }
+    th {
+      text-align: left;
+      font-weight: 600;
+      color: #52616b;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.5px;
+    }
+    td.right {
+      text-align: right;
+    }
+    .empty-message {
+      padding: 24px;
+      text-align: center;
+      color: #6c7a89;
+      border: 1px dashed #cbd5e1;
+      border-radius: 8px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .pill.positive {
+      background: #e9f5ee;
+      color: #1b806a;
+    }
+    .pill.negative {
+      background: #fdecea;
+      color: #b42318;
+    }
+    .muted.small {
+      font-size: 13px;
+      color: #6c7a89;
+    }
+    footer {
+      margin-top: 48px;
+      text-align: center;
+      font-size: 12px;
+      color: #95a1b2;
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>Painel Financeiro Consolidado</h1>
+      <p class="muted">Visualização dinâmica das métricas operacionais, de custos e rentabilidade.</p>
+    </header>
+
+    <section class="card" id="card-top-desp">
+      <div class="card-header">
+        <h2 style="margin:0">Top Despesas</h2>
+        <div class="card-actions">
+          <span class="badge warn hidden" data-status-sheet="Top_Despesas">Sem dados</span>
+          <button class="btn-sm" data-export="tabTopDespesas">⬇️ Exportar CSV</button>
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="tabTopDespesas">Geral</button>
+      </div>
+      <div id="tabTopDespesas"></div>
+    </section>
+
+    <section class="card" id="card-dre">
+      <div class="card-header">
+        <h2 style="margin:0">DRE Simplificada</h2>
+        <div class="card-actions">
+          <span class="badge warn hidden" data-status-sheet="DRE_Simplificada">Sem dados</span>
+          <button class="btn-sm" data-export="tabDRE">⬇️ Exportar CSV</button>
+        </div>
+      </div>
+      <p class="muted small">Demonstração do Resultado consolidando receitas, despesas e margens.</p>
+      <div id="tabDRE"></div>
+    </section>
+
+    <section class="card" style="margin-top:16px" id="card-impacto-retiradas">
+      <div class="card-header">
+        <h2 style="margin:0">Impacto das Retiradas dos Sócios</h2>
+        <div class="card-actions">
+          <span class="badge warn hidden" data-status-sheet="Impacto_Retiradas_Socios">Sem dados</span>
+          <button class="btn-sm" data-export="tabImpactoRetiradas">⬇️ Exportar CSV</button>
+        </div>
+      </div>
+      <p class="muted small">Análise do impacto dos pró-labores nas despesas e resultados da empresa.</p>
+      <div id="tabImpactoRetiradas"></div>
+    </section>
+  </main>
+
+  <footer>
+    Atualize a planilha para visualizar dados mais recentes.
+  </footer>
+
+  <script>
+    const state = {
+      datasets: {},
+      searchTerm: ''
+    };
+
+    const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+    const PCT = new Intl.NumberFormat('pt-BR', { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const INT = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 });
+
+    function asNum(value) {
+      if (value === null || value === undefined || value === '') return 0;
+      if (typeof value === 'number') return value;
+      const num = Number(String(value).replace(/[^0-9,-]/g, '').replace(',', '.'));
+      return Number.isFinite(num) ? num : 0;
+    }
+
+    function pct01(value) {
+      return asNum(value) / 100;
+    }
+
+    function applySearch(rows) {
+      if (!rows || !rows.length) return [];
+      const term = (state.searchTerm || '').trim().toLowerCase();
+      if (!term) return rows;
+      return rows.filter(row => Object.values(row || {}).some(val => String(val || '').toLowerCase().includes(term)));
+    }
+
+    function statusBadge(sheetName, hasData) {
+      const badge = document.querySelector(`[data-status-sheet="${sheetName}"]`);
+      if (!badge) return;
+      if (hasData) {
+        badge.classList.add('hidden');
+      } else {
+        badge.classList.remove('hidden');
+      }
+    }
+
+    function tableFromData(targetId, columns, rows) {
+      const container = document.getElementById(targetId);
+      if (!container) return;
+      if (!rows || !rows.length) {
+        container.innerHTML = '<div class="empty-message">Sem dados disponíveis.</div>';
+        return;
+      }
+
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const tbody = document.createElement('tbody');
+
+      const headRow = document.createElement('tr');
+      columns.forEach(col => {
+        const th = document.createElement('th');
+        th.textContent = col.label || col.key;
+        headRow.appendChild(th);
+      });
+      thead.appendChild(headRow);
+
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        columns.forEach(col => {
+          const td = document.createElement('td');
+          if (col.right) td.classList.add('right');
+          const raw = row[col.key];
+          const formatted = col.format ? col.format(raw, row) : raw;
+          td.innerHTML = formatted !== undefined && formatted !== null ? String(formatted) : '';
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+
+      table.appendChild(thead);
+      table.appendChild(tbody);
+      container.innerHTML = '';
+      container.appendChild(table);
+    }
+
+    const COLMAP = {
+      Top_Despesas: {
+        rank: ['rank'],
+        tipo_despesa: ['tipo_despesa'],
+        item_nome: ['item_nome'],
+        valor: ['valor'],
+        perc_total_despesas: ['perc_total_despesas']
+      },
+      DRE_Simplificada: {
+        bloco: ['bloco'],
+        descricao: ['descricao'],
+        valor: ['valor']
+      },
+      Impacto_Retiradas_Socios: {
+        receita_total: ['receita_total', 'receita_bruta'],
+        receita_core_honorarios: ['receita_core_honorarios', 'receita_honorarios'],
+        despesas_totais: ['despesas_totais'],
+        despesas_sem_prolabore: ['despesas_sem_prolabore'],
+        prolabores_total: ['prolabores_total', 'retiradas_total'],
+        resultado_bruto_com_prolabore: ['resultado_bruto_com_prolabore', 'resultado_com_pl'],
+        resultado_hipotetico_sem_prolabore: ['resultado_hipotetico_sem_prolabore', 'resultado_sem_pl'],
+        perc_prolabore_sobre_receita_total: ['perc_prolabore_sobre_receita_total'],
+        perc_prolabore_sobre_receita_core: ['perc_prolabore_sobre_receita_core'],
+        perc_prolabore_sobre_despesas_totais: ['perc_prolabore_sobre_despesas_totais'],
+        perc_prolabore_sobre_resultado_sem_pl: ['perc_prolabore_sobre_resultado_sem_pl'],
+        margem_operacional_com_prolabore: ['margem_operacional_com_prolabore'],
+        margem_operacional_sem_prolabore: ['margem_operacional_sem_prolabore'],
+        impacto_margem_percentual: ['impacto_margem_percentual']
+      }
+    };
+
+    const REQUIRED_SHEETS = [
+      'Ticket_Geral',
+      'Resultado_Regime_Com_Peso',
+      'Impacto_Retiradas_Socios',
+      'DRE_Simplificada'
+    ];
+
+    const OPTIONAL_SHEETS = [
+      'Ticket_Regime',
+      'Ticket_Regime_Atividade',
+      'Ticket_Clientes',
+      'Resultado_Segmento_Com_Peso',
+      'Top_Despesas'
+    ];
+
+    function sheetRows(wb, name) {
+      if (!wb) return [];
+      if (Array.isArray(wb[name])) return wb[name];
+      if (wb.sheets && Array.isArray(wb.sheets[name])) return wb.sheets[name];
+      return [];
+    }
+
+    function getSheets(wb) {
+      return {
+        g: sheetRows(wb, 'Ticket_Geral') || [],
+        tr: sheetRows(wb, 'Ticket_Regime') || [],
+        tra: sheetRows(wb, 'Ticket_Regime_Atividade') || [],
+        tc: sheetRows(wb, 'Ticket_Clientes') || [],
+        rc: sheetRows(wb, 'Resultado_Regime_Com_Peso') || [],
+        segc: sheetRows(wb, 'Resultado_Segmento_Com_Peso') || [],
+        td: sheetRows(wb, 'Top_Despesas') || [],
+        impacto: sheetRows(wb, 'Impacto_Retiradas_Socios') || [],
+        dre: sheetRows(wb, 'DRE_Simplificada') || []
+      };
+    }
+
+    function renderDashboard(wb) {
+      const S = getSheets(wb);
+      const topG = S.td || [];
+      state.datasets = {
+        topDespesas: topG,
+        impactoRetiradas: S.impacto || [],
+        dre: S.dre || []
+      };
+      renderAll();
+    }
+
+    function renderHero() {}
+    function renderResultadoRegime() {}
+    function renderSegmentos() {}
+    function renderTickets() {}
+
+    function renderTopDespesas() {
+      const top = applySearch(state.datasets.topDespesas || []);
+      if (!top || !top.length) {
+        tableFromData('tabTopDespesas', [], []);
+        statusBadge('Top_Despesas', false);
+        return;
+      }
+      tableFromData('tabTopDespesas', [
+        { key: 'rank', label: '#', right: true, format: v => INT.format(asNum(v)) },
+        { key: 'tipo_despesa', label: 'Tipo' },
+        { key: 'item_nome', label: 'Item' },
+        { key: 'valor', label: 'Valor', right: true, format: v => BRL.format(asNum(v)) },
+        { key: 'perc_total_despesas', label: '% do Total', right: true, format: v => PCT.format(pct01(v)) }
+      ], top);
+      statusBadge('Top_Despesas', (state.datasets.topDespesas || []).length > 0);
+    }
+
+    function renderImpactoRetiradas() {
+      const rows = applySearch(state.datasets.impactoRetiradas || []);
+
+      if (!rows || !rows.length) {
+        const target = document.getElementById('tabImpactoRetiradas');
+        if (target) {
+          target.innerHTML = '<div class="empty-message">Sem dados disponíveis.</div>';
+        }
+        statusBadge('Impacto_Retiradas_Socios', false);
+        return;
+      }
+
+      const row = rows[0];
+
+      tableFromData('tabImpactoRetiradas', [
+        { key: 'receita_total', label: 'Receita Total', right: true, format: v => BRL.format(asNum(v)) },
+        { key: 'despesas_totais', label: 'Despesas Totais (com PL)', right: true, format: v => BRL.format(asNum(v)) },
+        { key: 'prolabores_total', label: 'Pró-labores Total', right: true, format: v => BRL.format(asNum(v)) },
+        { key: 'resultado_bruto_com_prolabore', label: 'Resultado com PL', right: true, format: v => {
+            const val = asNum(v);
+            return (val >= 0 ? '<span class="pill positive">' : '<span class="pill negative">') + BRL.format(val) + '</span>';
+          }, export: v => asNum(v) },
+        { key: 'resultado_hipotetico_sem_prolabore', label: 'Resultado Hipotético (sem PL)', right: true, format: v => BRL.format(asNum(v)) },
+        { key: 'perc_prolabore_sobre_receita_total', label: '% PL sobre Receita', right: true, format: v => PCT.format(pct01(v)) },
+        { key: 'perc_prolabore_sobre_despesas_totais', label: '% PL sobre Despesas', right: true, format: v => PCT.format(pct01(v)) },
+        { key: 'margem_operacional_com_prolabore', label: 'Margem Op. (com PL)', right: true, format: v => PCT.format(pct01(v)) },
+        { key: 'impacto_margem_percentual', label: 'Impacto na Margem', right: true, format: v => {
+            const val = asNum(v);
+            const txt = (val >= 0 ? '+' : '') + PCT.format(pct01(val));
+            return val < 0 ? `<span class="badge error">${txt}</span>` : `<span class="badge ok">${txt}</span>`;
+          }, export: v => asNum(v) }
+      ], rows);
+
+      statusBadge('Impacto_Retiradas_Socios', true);
+    }
+
+    function renderDRE() {
+      const rows = state.datasets.dre || [];
+      if (!rows.length) {
+        const target = document.getElementById('tabDRE');
+        if (target) {
+          target.innerHTML = '<div class="empty-message">Sem dados disponíveis.</div>';
+        }
+        statusBadge('DRE_Simplificada', false);
+        return;
+      }
+
+      tableFromData('tabDRE', [
+        { key: 'bloco', label: 'Bloco' },
+        { key: 'descricao', label: 'Descrição' },
+        { key: 'valor', label: 'Valor', right: true, format: v => BRL.format(asNum(v)) }
+      ], rows);
+      statusBadge('DRE_Simplificada', true);
+    }
+
+    function renderValidations() {}
+
+    function renderAll() {
+      renderHero();
+      renderResultadoRegime();
+      renderSegmentos();
+      renderTickets();
+      renderTopDespesas();
+      renderImpactoRetiradas();
+      renderDRE();
+      renderValidations();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          const targetId = tab.getAttribute('data-tab');
+          if (!targetId) return;
+
+          const container = tab.closest('.card');
+          if (!container) return;
+
+          container.querySelectorAll('[id^="tab"]').forEach(t => {
+            t.classList.add('hidden');
+          });
+
+          container.querySelectorAll('.tab').forEach(t => {
+            t.classList.remove('active');
+          });
+
+          tab.classList.add('active');
+
+          const target = document.getElementById(targetId);
+          if (target) {
+            target.classList.remove('hidden');
+          }
+        });
+      });
+
+      // Dados de demonstração (podem ser substituídos pelo carregamento real do Excel)
+      state.datasets = {
+        topDespesas: [
+          { rank: 1, tipo_despesa: 'DESPESA ADMINISTRATIVA', item_nome: 'Aluguel', valor: 18250.35, perc_total_despesas: 28.5 },
+          { rank: 2, tipo_despesa: 'DESPESA TRABALHISTA', item_nome: 'Folha - Departamento Fiscal', valor: 15210.88, perc_total_despesas: 23.8 }
+        ],
+        impactoRetiradas: [
+          {
+            receita_total: 1599830.62,
+            despesas_totais: 1488308.92,
+            prolabores_total: 853443.39,
+            resultado_bruto_com_prolabore: 111521.7,
+            resultado_hipotetico_sem_prolabore: 964965.09,
+            perc_prolabore_sobre_receita_total: 53.35,
+            perc_prolabore_sobre_despesas_totais: 57.35,
+            margem_operacional_com_prolabore: 6.97,
+            impacto_margem_percentual: -53.35
+          }
+        ],
+        dre: []
+      };
+
+      renderAll();
+    });
+  </script>
+</body>
+</html>
