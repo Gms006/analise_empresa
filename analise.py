@@ -111,6 +111,10 @@ PROLABORE_SOCIOS = [
     "PRO-LABORE - MATEUS",
 ]
 
+# Cache para reuso de parsing
+_SHEETS_INFO_CACHE: Optional[Dict[str, Optional[str]]] = None
+_PLANILHA_UNICA_CACHE: Optional[Dict[str, pd.DataFrame]] = None
+
 # ============================================================================
 # SANITIZAÇÃO PARA EXCEL (evita fórmulas removidas)
 # ============================================================================
@@ -312,6 +316,222 @@ def classifica_departamento_fuzzy(colaborador: str) -> Tuple[str, int]:
 # CARREGAMENTO DOS DADOS
 # ============================================================================
 
+def _detectar_abas_excel(caminho: Path, log: List[str]) -> Dict[str, Optional[str]]:
+    """Determina se o arquivo possui abas separadas ou layout combinado."""
+    global _SHEETS_INFO_CACHE
+    if _SHEETS_INFO_CACHE is not None:
+        return _SHEETS_INFO_CACHE
+
+    info: Dict[str, Optional[str]] = {
+        'modo': None,
+        'sheet_receitas': None,
+        'sheet_despesas': None,
+        'sheet_unica': None,
+        'erro': None,
+    }
+
+    try:
+        xls = pd.ExcelFile(caminho)
+    except Exception as e:
+        info['erro'] = str(e)
+        log.append(f"✗ ERRO ao abrir '{caminho}': {e}")
+        _SHEETS_INFO_CACHE = info
+        return info
+
+    sheets = xls.sheet_names
+    log.append(f"✓ Abas encontradas: {sheets}")
+
+    def _fuzzy_find(keywords: List[str]) -> Tuple[Optional[str], float]:
+        melhor_nome = None
+        melhor_score = 0.0
+        for sheet in sheets:
+            sheet_norm = sheet.lower()
+            for alvo in keywords:
+                score = fuzz.partial_ratio(sheet_norm, alvo)
+                if score > melhor_score:
+                    melhor_score = score
+                    melhor_nome = sheet
+        return melhor_nome, melhor_score
+
+    sheet_rec, score_rec = _fuzzy_find(["receita", "receitas"])
+    sheet_desp, score_desp = _fuzzy_find(["despesa", "despesas"])
+
+    threshold = 70.0
+    if (
+        sheet_rec
+        and sheet_desp
+        and sheet_rec != sheet_desp
+        and score_rec >= threshold
+        and score_desp >= threshold
+    ):
+        info['modo'] = 'duas_abas'
+        info['sheet_receitas'] = sheet_rec
+        info['sheet_despesas'] = sheet_desp
+        log.append(
+            f"→ Estratégia de leitura: abas dedicadas (Receitas='{sheet_rec}', Despesas='{sheet_desp}')"
+        )
+    else:
+        # fallback para aba única combinada
+        sheet_unica: Optional[str] = None
+        if len(sheets) == 1:
+            sheet_unica = sheets[0]
+        else:
+            for candidato in [sheet_rec, sheet_desp] + sheets:
+                if candidato:
+                    sheet_unica = candidato
+                    break
+        if sheet_unica is None:
+            info['erro'] = 'Nenhuma aba disponível para leitura.'
+            log.append("✗ ERRO: Nenhuma aba encontrada no arquivo.")
+        else:
+            info['modo'] = 'aba_unica'
+            info['sheet_unica'] = sheet_unica
+            if sheet_rec and sheet_desp and sheet_rec == sheet_desp:
+                log.append(
+                    f"→ Estratégia de leitura: aba única '{sheet_unica}' (receitas+despesas na mesma guia)"
+                )
+            else:
+                log.append(
+                    f"→ Estratégia de leitura: aba única '{sheet_unica}' (layout combinado)"
+                )
+
+    _SHEETS_INFO_CACHE = info
+    return info
+
+
+def _coluna_por_indice(df: pd.DataFrame, indice: int) -> Optional[str]:
+    if indice < len(df.columns):
+        return df.columns[indice]
+    return None
+
+
+def _parse_planilha_unica(
+    caminho: Path,
+    sheet_name: str,
+    log: List[str]
+) -> Dict[str, pd.DataFrame]:
+    """Parser específico para o layout combinado (Planilha única)."""
+    global _PLANILHA_UNICA_CACHE
+    if _PLANILHA_UNICA_CACHE is not None:
+        return _PLANILHA_UNICA_CACHE
+
+    try:
+        df_raw = pd.read_excel(caminho, sheet_name=sheet_name, header=0)
+    except Exception as e:
+        log.append(f"✗ ERRO ao ler aba única '{sheet_name}': {e}")
+        _PLANILHA_UNICA_CACHE = {
+            'df_receitas': pd.DataFrame(),
+            'df_despesas': pd.DataFrame(),
+            'valor_rateio_adv': 0.0,
+            'linhas_receitas_lidas': 0,
+            'linhas_despesas_lidas': 0,
+            'erro': str(e),
+        }
+        return _PLANILHA_UNICA_CACHE
+
+    # ---------------- RECEITAS ----------------
+    col_cliente = _coluna_por_indice(df_raw, 0)
+    col_regime = _coluna_por_indice(df_raw, 1)
+    col_receita = _coluna_por_indice(df_raw, 2)
+
+    df_receitas_raw = df_raw[[c for c in [col_cliente, col_regime, col_receita] if c is not None]].copy()
+    df_receitas_raw.columns = ['cliente', 'regime_original', 'receita'][: len(df_receitas_raw.columns)]
+    df_receitas_raw = df_receitas_raw.dropna(how='all')
+
+    df_receitas_norm = pd.DataFrame()
+    if not df_receitas_raw.empty and {'cliente', 'regime_original', 'receita'}.issubset(df_receitas_raw.columns):
+        df_receitas_norm['cliente'] = df_receitas_raw['cliente'].apply(
+            lambda x: str(x).strip() if pd.notna(x) else ""
+        )
+        df_receitas_norm['regime_original'] = df_receitas_raw['regime_original'].apply(
+            lambda x: str(x).strip() if pd.notna(x) else ""
+        )
+        df_receitas_norm['receita'] = df_receitas_raw['receita'].apply(converte_para_numero)
+        df_receitas_norm['empresa_padronizada'] = df_receitas_norm['cliente'].apply(
+            lambda x: normaliza_texto(x, remover_acentos=True, minuscula=False).upper()
+        )
+        df_receitas_norm[['regime_base', 'segmento']] = df_receitas_norm['regime_original'].apply(
+            lambda x: pd.Series(parse_regime_e_segmento(x))
+        )
+        df_receitas_norm['tipo_receita'] = df_receitas_norm['cliente'].apply(classifica_tipo_receita)
+        df_receitas_norm['is_rateio_adv'] = df_receitas_norm['cliente'].apply(is_rateio_advocacia)
+    else:
+        df_receitas_norm = pd.DataFrame(columns=[
+            'cliente', 'regime_original', 'receita', 'empresa_padronizada',
+            'regime_base', 'segmento', 'tipo_receita', 'is_rateio_adv'
+        ])
+
+    valor_rateio_adv = df_receitas_norm.loc[df_receitas_norm['is_rateio_adv'], 'receita'].sum()
+    df_receitas_norm = df_receitas_norm[~df_receitas_norm['is_rateio_adv']].copy()
+    df_receitas_norm = df_receitas_norm[df_receitas_norm['cliente'] != ""].copy()
+
+    # ---------------- DESPESAS ----------------
+    def _col_por_nome_ou_indice(prefixo: str, fallback_indice: int) -> Optional[str]:
+        for col in df_raw.columns:
+            if isinstance(col, str) and col.strip().lower().startswith(prefixo):
+                return col
+        return _coluna_por_indice(df_raw, fallback_indice)
+
+    col_adm_item = _col_por_nome_ou_indice('unnamed: 6', 6)
+    col_adm_valor = _col_por_nome_ou_indice('unnamed: 7', 7)
+    col_trab_item = _col_por_nome_ou_indice('unnamed: 9', 9)
+    col_trab_valor = _col_por_nome_ou_indice('unnamed: 10', 10)
+
+    registros: List[pd.DataFrame] = []
+
+    def _monta_bloco(col_item: Optional[str], col_valor: Optional[str], grupo: str) -> pd.DataFrame:
+        if col_item is None or col_valor is None:
+            return pd.DataFrame(columns=['grupo', 'item_nome', 'valor', 'id_linha'])
+        bloco = df_raw[[col_item, col_valor]].copy()
+        bloco.columns = ['item_nome', 'valor']
+        bloco['item_nome_raw'] = bloco['item_nome']
+        bloco['valor_raw'] = bloco['valor']
+        bloco['item_nome'] = bloco['item_nome'].apply(
+            lambda x: str(x).strip() if pd.notna(x) else ""
+        )
+        bloco['valor'] = bloco['valor'].apply(converte_para_numero)
+        labels_excluir = {'VALOR', 'DESPESAS ADMINISTRATIVAS', 'DESPESAS TRABALHISTAS', 'TOTAL'}
+        bloco = bloco[~bloco['item_nome'].str.upper().isin(labels_excluir)]
+        bloco = bloco[~bloco['valor_raw'].apply(
+            lambda x: str(x).strip().upper() if pd.notna(x) else ""
+        ).isin(labels_excluir)]
+        bloco = bloco[~((bloco['item_nome'] == "") & (bloco['valor'] == 0.0))]
+        bloco['grupo'] = grupo
+        bloco['id_linha'] = bloco.index + 2  # aproximado ao nº de linha no Excel
+        return bloco[['grupo', 'item_nome', 'valor', 'id_linha']]
+
+    registros.append(_monta_bloco(col_adm_item, col_adm_valor, 'DESPESAS ADMINISTRATIVAS'))
+    registros.append(_monta_bloco(col_trab_item, col_trab_valor, 'DESPESAS TRABALHISTAS'))
+
+    df_despesas_norm = pd.concat(registros, ignore_index=True) if registros else pd.DataFrame()
+    if df_despesas_norm.empty:
+        df_despesas_norm = pd.DataFrame(columns=['grupo', 'item_nome', 'valor', 'id_linha'])
+
+    df_despesas_norm['tipo_trabalhista'] = ""
+    df_despesas_norm['colaborador'] = ""
+    df_despesas_norm['departamento_classificado'] = ""
+    df_despesas_norm['fuzzy_score'] = 0.0
+
+    mask_trab = df_despesas_norm['grupo'] == 'DESPESAS TRABALHISTAS'
+    if mask_trab.any():
+        df_despesas_norm.loc[mask_trab, 'tipo_trabalhista'] = df_despesas_norm.loc[mask_trab, 'item_nome'].apply(classifica_tipo_trabalhista)
+        df_despesas_norm.loc[mask_trab, 'colaborador'] = df_despesas_norm.loc[mask_trab, 'item_nome'].apply(extrai_colaborador)
+        classificacoes = df_despesas_norm.loc[mask_trab, 'colaborador'].apply(
+            lambda x: classifica_departamento_fuzzy(x) if x else ("SEM MATCH", 0)
+        )
+        df_despesas_norm.loc[mask_trab, 'departamento_classificado'] = [c[0] for c in classificacoes]
+        df_despesas_norm.loc[mask_trab, 'fuzzy_score'] = np.array([c[1] for c in classificacoes], dtype=float)
+
+    _PLANILHA_UNICA_CACHE = {
+        'df_receitas': df_receitas_norm,
+        'df_despesas': df_despesas_norm,
+        'valor_rateio_adv': float(valor_rateio_adv),
+        'linhas_receitas_lidas': int(len(df_receitas_raw)),
+        'linhas_despesas_lidas': int(len(df_despesas_norm)),
+        'erro': None,
+    }
+    return _PLANILHA_UNICA_CACHE
+
 def carrega_receitas(caminho: Path, log: List[str]) -> Tuple[pd.DataFrame, float]:
     """
     Lê RECEITAS e retorna (df_receitas_validas, valor_rateio_advocacia),
@@ -320,49 +540,63 @@ def carrega_receitas(caminho: Path, log: List[str]) -> Tuple[pd.DataFrame, float
     log.append("\n" + "-"*80)
     log.append("PROCESSANDO RECEITAS")
     log.append("-"*80)
-    try:
-        df = pd.read_excel(caminho, sheet_name="RECEITAS")
-        log.append(f"✓ Linhas lidas: {len(df)}")
-    except Exception as e:
-        log.append(f"✗ ERRO ao ler RECEITAS: {e}")
+    info = _detectar_abas_excel(caminho, log)
+    if info.get('erro') and info['erro']:
+        log.append("✗ ERRO: Não foi possível detectar as abas de receitas.")
         return pd.DataFrame(), 0.0
 
-    df.columns = [normaliza_texto(str(c), remover_acentos=True, minuscula=False).upper() for c in df.columns]
+    modo = info.get('modo')
+    if modo == 'aba_unica':
+        cache = _parse_planilha_unica(caminho, info.get('sheet_unica', ''), log)
+        if cache.get('erro'):
+            log.append("✗ ERRO: Falha ao interpretar aba única de receitas.")
+            return pd.DataFrame(), 0.0
+        df_norm = cache['df_receitas'].copy()
+        valor_rateio_adv = cache['valor_rateio_adv']
+        log.append(f"✓ Linhas lidas (aba única): {cache['linhas_receitas_lidas']}")
+    else:
+        sheet_receitas = info.get('sheet_receitas') or 'RECEITAS'
+        try:
+            df = pd.read_excel(caminho, sheet_name=sheet_receitas)
+            log.append(f"✓ Linhas lidas ({sheet_receitas}): {len(df)}")
+        except Exception as e:
+            log.append(f"✗ ERRO ao ler RECEITAS ('{sheet_receitas}'): {e}")
+            return pd.DataFrame(), 0.0
 
-    col_cliente = col_regime = col_receita = None
-    for col in df.columns:
-        col_norm = normaliza_texto(col, remover_acentos=True, minuscula=True)
-        if "honorario" in col_norm and "contab" in col_norm:
-            col_cliente = col
-        elif "regime" in col_norm and "empresa" in col_norm:
-            col_regime = col
-        elif "receita" in col_norm:
-            col_receita = col
+        df.columns = [normaliza_texto(str(c), remover_acentos=True, minuscula=False).upper() for c in df.columns]
 
-    if not all([col_cliente, col_regime, col_receita]):
-        log.append(f"✗ ERRO: Colunas esperadas não encontradas em RECEITAS. Disponíveis: {df.columns.tolist()}")
-        return pd.DataFrame(), 0.0
+        col_cliente = col_regime = col_receita = None
+        for col in df.columns:
+            col_norm = normaliza_texto(col, remover_acentos=True, minuscula=True)
+            if "honorario" in col_norm and "contab" in col_norm:
+                col_cliente = col
+            elif "regime" in col_norm and "empresa" in col_norm:
+                col_regime = col
+            elif "receita" in col_norm:
+                col_receita = col
 
-    df_norm = pd.DataFrame()
-    df_norm['cliente']          = df[col_cliente].apply(lambda x: str(x).strip() if pd.notna(x) else "")
-    df_norm['regime_original']  = df[col_regime].apply(lambda x: str(x).strip() if pd.notna(x) else "")
-    df_norm['receita']          = df[col_receita].apply(converte_para_numero)
-    df_norm['empresa_padronizada'] = df_norm['cliente'].apply(
-        lambda x: normaliza_texto(x, remover_acentos=True, minuscula=False).upper()
-    )
-    df_norm[['regime_base', 'segmento']] = df_norm['regime_original'].apply(
-        lambda x: pd.Series(parse_regime_e_segmento(x))
-    )
+        if not all([col_cliente, col_regime, col_receita]):
+            log.append(f"✗ ERRO: Colunas esperadas não encontradas em RECEITAS. Disponíveis: {df.columns.tolist()}")
+            return pd.DataFrame(), 0.0
 
-    # Identifica e separa as receitas de rateio-advocacia (abatimento)
-    df_norm['is_rateio_adv'] = df_norm['cliente'].apply(is_rateio_advocacia)
-    valor_rateio_adv = df_norm.loc[df_norm['is_rateio_adv'], 'receita'].sum()
+        df_norm = pd.DataFrame()
+        df_norm['cliente'] = df[col_cliente].apply(lambda x: str(x).strip() if pd.notna(x) else "")
+        df_norm['regime_original'] = df[col_regime].apply(lambda x: str(x).strip() if pd.notna(x) else "")
+        df_norm['receita'] = df[col_receita].apply(converte_para_numero)
+        df_norm['empresa_padronizada'] = df_norm['cliente'].apply(
+            lambda x: normaliza_texto(x, remover_acentos=True, minuscula=False).upper()
+        )
+        df_norm[['regime_base', 'segmento']] = df_norm['regime_original'].apply(
+            lambda x: pd.Series(parse_regime_e_segmento(x))
+        )
+        df_norm['tipo_receita'] = df_norm['cliente'].apply(classifica_tipo_receita)
+        df_norm['is_rateio_adv'] = df_norm['cliente'].apply(is_rateio_advocacia)
+        valor_rateio_adv = df_norm.loc[df_norm['is_rateio_adv'], 'receita'].sum()
+        df_norm = df_norm[~df_norm['is_rateio_adv']].copy()
 
-    # Remove essas linhas do dataset de receitas (não serão receita)
-    df_norm = df_norm[~df_norm['is_rateio_adv']].copy()
+    if 'is_rateio_adv' in df_norm.columns:
+        df_norm = df_norm.drop(columns=['is_rateio_adv'])
 
-    # Classificação do restante
-    df_norm['tipo_receita'] = df_norm['cliente'].apply(classifica_tipo_receita)
     df_norm = df_norm[df_norm['cliente'] != ""].copy()
 
     log.append(f"✓ Receitas válidas (já excluído rateio-advocacia): {len(df_norm)}")
@@ -376,50 +610,64 @@ def carrega_despesas(caminho: Path, log: List[str]) -> pd.DataFrame:
     log.append("\n" + "-"*80)
     log.append("PROCESSANDO DESPESAS")
     log.append("-"*80)
-    try:
-        df = pd.read_excel(caminho, sheet_name="DESPESAS", header=None)
-        log.append(f"✓ Linhas lidas: {len(df)}")
-    except Exception as e:
-        log.append(f"✗ ERRO ao ler DESPESAS: {e}")
+    info = _detectar_abas_excel(caminho, log)
+    if info.get('erro') and info['erro']:
+        log.append("✗ ERRO: Não foi possível detectar as abas de despesas.")
         return pd.DataFrame()
 
-    registros = []
-    for idx in range(1, len(df)):
-        grupo_raw = df.iloc[idx, 0] if len(df.columns) > 0 else None
-        nome_raw  = df.iloc[idx, 1] if len(df.columns) > 1 else None
-        valor_raw = df.iloc[idx, 2] if len(df.columns) > 2 else None
+    modo = info.get('modo')
+    if modo == 'aba_unica':
+        cache = _parse_planilha_unica(caminho, info.get('sheet_unica', ''), log)
+        if cache.get('erro'):
+            log.append("✗ ERRO: Falha ao interpretar aba única de despesas.")
+            return pd.DataFrame()
+        df_norm = cache['df_despesas'].copy()
+        log.append(f"✓ Linhas lidas (aba única): {cache['linhas_despesas_lidas']}")
+    else:
+        sheet_despesas = info.get('sheet_despesas') or 'DESPESAS'
+        try:
+            df = pd.read_excel(caminho, sheet_name=sheet_despesas, header=None)
+            log.append(f"✓ Linhas lidas ({sheet_despesas}): {len(df)}")
+        except Exception as e:
+            log.append(f"✗ ERRO ao ler DESPESAS ('{sheet_despesas}'): {e}")
+            return pd.DataFrame()
 
-        if pd.isna(grupo_raw) and pd.isna(nome_raw) and pd.isna(valor_raw):
-            continue
+        registros = []
+        for idx in range(1, len(df)):
+            grupo_raw = df.iloc[idx, 0] if len(df.columns) > 0 else None
+            nome_raw = df.iloc[idx, 1] if len(df.columns) > 1 else None
+            valor_raw = df.iloc[idx, 2] if len(df.columns) > 2 else None
 
-        grupo = classifica_grupo_despesa(grupo_raw)
-        nome  = str(nome_raw).strip() if pd.notna(nome_raw) else ""
-        valor = converte_para_numero(valor_raw)
+            if pd.isna(grupo_raw) and pd.isna(nome_raw) and pd.isna(valor_raw):
+                continue
 
-        if nome and valor != 0:
-            registros.append({'grupo': grupo, 'item_nome': nome, 'valor': valor, 'id_linha': idx + 1})
+            grupo = classifica_grupo_despesa(grupo_raw)
+            nome = str(nome_raw).strip() if pd.notna(nome_raw) else ""
+            valor = converte_para_numero(valor_raw)
 
-    df_norm = pd.DataFrame(registros)
-    if df_norm.empty:
-        log.append("⚠ AVISO: Nenhuma despesa válida")
-        return df_norm
+            if nome and valor != 0:
+                registros.append({'grupo': grupo, 'item_nome': nome, 'valor': valor, 'id_linha': idx + 1})
 
-    # Enriquecimento para trabalhistas
-    mask_trab = df_norm['grupo'] == "DESPESAS TRABALHISTAS"
-    df_norm['tipo_trabalhista'] = ""
-    df_norm['colaborador'] = ""
-    df_norm['departamento_classificado'] = ""
-    df_norm['fuzzy_score'] = 0.0  # dtype float para evitar FutureWarning
+        df_norm = pd.DataFrame(registros)
+        if df_norm.empty:
+            log.append("⚠ AVISO: Nenhuma despesa válida")
+            return df_norm
 
-    if mask_trab.any():
-        df_norm.loc[mask_trab, 'tipo_trabalhista'] = df_norm.loc[mask_trab, 'item_nome'].apply(classifica_tipo_trabalhista)
-        df_norm.loc[mask_trab, 'colaborador'] = df_norm.loc[mask_trab, 'item_nome'].apply(extrai_colaborador)
+        df_norm['tipo_trabalhista'] = ""
+        df_norm['colaborador'] = ""
+        df_norm['departamento_classificado'] = ""
+        df_norm['fuzzy_score'] = 0.0  # dtype float para evitar FutureWarning
 
-        classificacoes = df_norm.loc[mask_trab, 'colaborador'].apply(
-            lambda x: classifica_departamento_fuzzy(x) if x else ("SEM MATCH", 0)
-        )
-        df_norm.loc[mask_trab, 'departamento_classificado'] = [c[0] for c in classificacoes]
-        df_norm.loc[mask_trab, 'fuzzy_score'] = np.array([c[1] for c in classificacoes], dtype=float)
+        mask_trab = df_norm['grupo'] == "DESPESAS TRABALHISTAS"
+        if mask_trab.any():
+            df_norm.loc[mask_trab, 'tipo_trabalhista'] = df_norm.loc[mask_trab, 'item_nome'].apply(classifica_tipo_trabalhista)
+            df_norm.loc[mask_trab, 'colaborador'] = df_norm.loc[mask_trab, 'item_nome'].apply(extrai_colaborador)
+
+            classificacoes = df_norm.loc[mask_trab, 'colaborador'].apply(
+                lambda x: classifica_departamento_fuzzy(x) if x else ("SEM MATCH", 0)
+            )
+            df_norm.loc[mask_trab, 'departamento_classificado'] = [c[0] for c in classificacoes]
+            df_norm.loc[mask_trab, 'fuzzy_score'] = np.array([c[1] for c in classificacoes], dtype=float)
 
     log.append(f"✓ Total de despesas normalizadas: {len(df_norm)}")
     for grp in sorted(df_norm['grupo'].unique()):
@@ -648,6 +896,631 @@ def gera_ticket_medio(df_receitas: pd.DataFrame):
 
     return ticket_geral, por_regime, por_reg_ativ, por_cliente
 
+# ============================================================================
+# ANÁLISE DE MARGEM DE CONTRIBUIÇÃO
+# ============================================================================
+
+def analise_margem_contribuicao(
+    df_receitas: pd.DataFrame,
+    df_despesas_rateado: pd.DataFrame,
+    meses: int
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Calcula margem de contribuição por regime, segmento e cliente.
+    Retorna: (df_margem_regime, df_margem_segmento, df_margem_cliente)
+    """
+    df_core = df_receitas[df_receitas['tipo_receita'] == 'HONORÁRIOS'].copy()
+    if df_core.empty:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    custo_total = df_despesas_rateado['valor'].sum() if not df_despesas_rateado.empty else 0.0
+    receita_total = df_core['receita'].sum()
+
+    # ========== MARGEM POR REGIME ==========
+    rec_regime = df_core.groupby('regime_base', dropna=False).agg({
+        'receita': 'sum',
+        'cliente': 'nunique'
+    }).reset_index()
+    rec_regime.columns = ['regime_base', 'receita_total', 'qtd_clientes']
+
+    rec_regime['receita_mensal'] = rec_regime['receita_total'] / meses
+    rec_regime['perc_receita'] = np.where(
+        receita_total > 0, rec_regime['receita_total'] / receita_total * 100, 0.0
+    )
+
+    # Custo proporcional à receita
+    rec_regime['custo_alocado'] = rec_regime['perc_receita'] / 100 * custo_total
+    rec_regime['custo_mensal'] = rec_regime['custo_alocado'] / meses
+
+    # Margem de contribuição
+    rec_regime['margem_contribuicao'] = rec_regime['receita_total'] - rec_regime['custo_alocado']
+    rec_regime['margem_contribuicao_mensal'] = rec_regime['margem_contribuicao'] / meses
+    rec_regime['margem_percentual'] = np.where(
+        rec_regime['receita_total'] > 0,
+        rec_regime['margem_contribuicao'] / rec_regime['receita_total'] * 100,
+        0.0
+    )
+
+    # Ticket e custo médio
+    rec_regime['ticket_medio'] = np.where(
+        rec_regime['qtd_clientes'] > 0,
+        rec_regime['receita_mensal'] / rec_regime['qtd_clientes'],
+        0.0
+    )
+    rec_regime['custo_medio'] = np.where(
+        rec_regime['qtd_clientes'] > 0,
+        rec_regime['custo_mensal'] / rec_regime['qtd_clientes'],
+        0.0
+    )
+    rec_regime['margem_media_cliente'] = rec_regime['ticket_medio'] - rec_regime['custo_medio']
+
+    df_margem_regime = rec_regime.sort_values('margem_contribuicao', ascending=False).reset_index(drop=True)
+
+    # ========== MARGEM POR SEGMENTO ==========
+    rec_seg = df_core.groupby(['regime_base', 'segmento'], dropna=False).agg({
+        'receita': 'sum',
+        'cliente': 'nunique'
+    }).reset_index()
+    rec_seg.columns = ['regime_base', 'segmento', 'receita_total', 'qtd_clientes']
+
+    # Custo proporcional dentro do regime
+    rec_seg = rec_seg.merge(
+        rec_regime[['regime_base', 'custo_alocado']],
+        on='regime_base',
+        how='left',
+        suffixes=('', '_regime')
+    )
+
+    receita_por_regime = df_core.groupby('regime_base')['receita'].sum().to_dict()
+    rec_seg['prop_no_regime'] = rec_seg.apply(
+        lambda r: r['receita_total'] / receita_por_regime.get(r['regime_base'], 1)
+        if receita_por_regime.get(r['regime_base'], 0) > 0 else 0.0,
+        axis=1
+    )
+    rec_seg['custo_alocado_segmento'] = rec_seg['prop_no_regime'] * rec_seg['custo_alocado']
+
+    rec_seg['receita_mensal'] = rec_seg['receita_total'] / meses
+    rec_seg['custo_mensal'] = rec_seg['custo_alocado_segmento'] / meses
+    rec_seg['margem_contribuicao'] = rec_seg['receita_total'] - rec_seg['custo_alocado_segmento']
+    rec_seg['margem_contribuicao_mensal'] = rec_seg['margem_contribuicao'] / meses
+    rec_seg['margem_percentual'] = np.where(
+        rec_seg['receita_total'] > 0,
+        rec_seg['margem_contribuicao'] / rec_seg['receita_total'] * 100,
+        0.0
+    )
+
+    df_margem_segmento = rec_seg[[
+        'regime_base', 'segmento', 'qtd_clientes', 'receita_total', 'receita_mensal',
+        'custo_alocado_segmento', 'custo_mensal', 'margem_contribuicao',
+        'margem_contribuicao_mensal', 'margem_percentual'
+    ]].sort_values(['regime_base', 'margem_contribuicao'], ascending=[True, False]).reset_index(drop=True)
+
+    # ========== MARGEM POR CLIENTE ==========
+    rec_cliente = df_core.groupby(['cliente', 'regime_base', 'segmento'], dropna=False).agg({
+        'receita': 'sum'
+    }).reset_index()
+
+    rec_cliente['receita_mensal'] = rec_cliente['receita'] / meses
+
+    rec_cliente = rec_cliente.merge(
+        rec_regime[['regime_base', 'custo_alocado', 'receita_total']],
+        on='regime_base',
+        how='left',
+        suffixes=('', '_regime')
+    )
+
+    rec_cliente['prop_receita'] = np.where(
+        rec_cliente['receita_total'] > 0,
+        rec_cliente['receita'] / rec_cliente['receita_total'],
+        0.0
+    )
+    rec_cliente['custo_alocado_cliente'] = rec_cliente['prop_receita'] * rec_cliente['custo_alocado']
+    rec_cliente['custo_mensal'] = rec_cliente['custo_alocado_cliente'] / meses
+
+    rec_cliente['margem_contribuicao'] = rec_cliente['receita'] - rec_cliente['custo_alocado_cliente']
+    rec_cliente['margem_contribuicao_mensal'] = rec_cliente['margem_contribuicao'] / meses
+    rec_cliente['margem_percentual'] = np.where(
+        rec_cliente['receita'] > 0,
+        rec_cliente['margem_contribuicao'] / rec_cliente['receita'] * 100,
+        0.0
+    )
+
+    df_margem_cliente = rec_cliente[[
+        'cliente', 'regime_base', 'segmento', 'receita', 'receita_mensal',
+        'custo_alocado_cliente', 'custo_mensal', 'margem_contribuicao',
+        'margem_contribuicao_mensal', 'margem_percentual'
+    ]].sort_values('margem_contribuicao', ascending=False).reset_index(drop=True)
+
+    return df_margem_regime, df_margem_segmento, df_margem_cliente
+
+
+def analise_ponto_equilibrio(df_margem_regime: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calcula ponto de equilíbrio por regime (quantos clientes precisaria para cobrir custos).
+    """
+    if df_margem_regime.empty:
+        return pd.DataFrame()
+
+    df_pe = df_margem_regime.copy()
+
+    df_pe['clientes_break_even'] = np.where(
+        df_pe['ticket_medio'] > 0,
+        np.ceil(df_pe['custo_mensal'] / df_pe['ticket_medio']),
+        np.inf
+    )
+
+    df_pe['clientes_faltantes'] = df_pe['clientes_break_even'] - df_pe['qtd_clientes']
+    df_pe['ja_esta_equilibrado'] = df_pe['clientes_faltantes'] <= 0
+
+    return df_pe[[
+        'regime_base', 'qtd_clientes', 'ticket_medio', 'custo_medio',
+        'margem_media_cliente', 'clientes_break_even', 'clientes_faltantes',
+        'ja_esta_equilibrado'
+    ]]
+
+# ============================================================================
+# ANÁLISE DE RENTABILIDADE
+# ============================================================================
+
+def analise_rentabilidade(
+    df_margem_regime: pd.DataFrame,
+    df_margem_cliente: pd.DataFrame
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Gera análises de ROI, índice de eficiência e ranking de rentabilidade.
+    Retorna: (df_roi_regime, df_clientes_deficitarios, df_ranking_rentabilidade)
+    """
+
+    # ========== ROI E EFICIÊNCIA POR REGIME ==========
+    df_roi = df_margem_regime.copy()
+
+    if df_roi.empty:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    df_roi['roi_percentual'] = np.where(
+        df_roi['custo_alocado'] > 0,
+        (df_roi['margem_contribuicao'] / df_roi['custo_alocado']) * 100,
+        0.0
+    )
+
+    df_roi['indice_eficiencia'] = np.where(
+        df_roi['custo_alocado'] > 0,
+        df_roi['receita_total'] / df_roi['custo_alocado'],
+        0.0
+    )
+
+    df_roi['classificacao_rentabilidade'] = pd.cut(
+        df_roi['margem_percentual'],
+        bins=[-np.inf, 0, 10, 25, 50, np.inf],
+        labels=['DEFICITÁRIO', 'BAIXA', 'MÉDIA', 'BOA', 'EXCELENTE']
+    )
+
+    df_roi_final = df_roi[[
+        'regime_base', 'qtd_clientes', 'receita_total', 'custo_alocado',
+        'margem_contribuicao', 'margem_percentual', 'roi_percentual',
+        'indice_eficiencia', 'classificacao_rentabilidade'
+    ]].sort_values('roi_percentual', ascending=False).reset_index(drop=True)
+
+    # ========== CLIENTES DEFICITÁRIOS ==========
+    df_deficitarios = df_margem_cliente[df_margem_cliente['margem_contribuicao'] < 0].copy()
+    df_deficitarios['prejuizo_mensal'] = -df_deficitarios['margem_contribuicao_mensal']
+    df_deficitarios = df_deficitarios.sort_values('prejuizo_mensal', ascending=False).reset_index(drop=True)
+
+    # ========== RANKING DE RENTABILIDADE ==========
+    df_ranking = df_margem_cliente.sort_values('margem_contribuicao', ascending=False).reset_index(drop=True).copy()
+    df_ranking['rank_geral'] = range(1, len(df_ranking) + 1)
+
+    top_10_melhores = df_ranking.head(10).copy()
+    top_10_melhores['classificacao'] = 'TOP 10 MELHORES'
+
+    top_10_piores = df_ranking.tail(10).sort_values('margem_contribuicao', ascending=True).copy()
+    top_10_piores['classificacao'] = 'TOP 10 PIORES'
+    if not top_10_piores.empty:
+        start_rank = len(df_ranking) - len(top_10_piores) + 1
+        top_10_piores['rank_geral'] = range(start_rank, len(df_ranking) + 1)
+
+    df_ranking_final = pd.concat([top_10_melhores, top_10_piores], ignore_index=True)
+
+    return df_roi_final, df_deficitarios, df_ranking_final
+
+# ============================================================================
+# ANÁLISE AMPLIADA DE RETIRADA DOS SÓCIOS
+# ============================================================================
+
+def analise_retirada_socios_completa(
+    df_receitas: pd.DataFrame,
+    df_despesas_rateado: pd.DataFrame,
+    total_retiradas: float,
+    df_margem_regime: pd.DataFrame,
+    meses: int
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Análise completa de retiradas: % sobre receita, comparativo por regime, sustentabilidade.
+    Retorna: (df_resumo_retirada, df_comparativo_regime)
+    """
+    receita_total = df_receitas['receita'].sum()
+    receita_core = df_receitas[df_receitas['tipo_receita'] == 'HONORÁRIOS']['receita'].sum()
+    despesas_totais = df_despesas_rateado['valor'].sum()
+    resultado_liquido = receita_total - despesas_totais
+
+    perc_sobre_receita_bruta = (total_retiradas / receita_total * 100) if receita_total > 0 else 0.0
+    perc_sobre_receita_core = (total_retiradas / receita_core * 100) if receita_core > 0 else 0.0
+    perc_sobre_resultado = (total_retiradas / resultado_liquido * 100) if resultado_liquido != 0 else np.nan
+
+    despesas_mensais = despesas_totais / meses if meses > 0 else despesas_totais
+    meses_sustentabilidade = (total_retiradas / despesas_mensais) if despesas_mensais > 0 else 0.0
+
+    df_resumo = pd.DataFrame([{
+        'receita_total': receita_total,
+        'receita_core_honorarios': receita_core,
+        'despesas_totais': despesas_totais,
+        'resultado_liquido': resultado_liquido,
+        'retiradas_prolabore_socios': total_retiradas,
+        'perc_retirada_sobre_receita_bruta': perc_sobre_receita_bruta,
+        'perc_retirada_sobre_receita_core': perc_sobre_receita_core,
+        'perc_retirada_sobre_resultado_liquido': perc_sobre_resultado,
+        'meses_sustentabilidade_retirada': meses_sustentabilidade,
+    }])
+
+    if not df_margem_regime.empty:
+        df_comp = df_margem_regime.copy()
+
+        margem_positiva_total = df_comp[df_comp['margem_contribuicao'] > 0]['margem_contribuicao'].sum()
+
+        df_comp['retirada_proporcional'] = np.where(
+            df_comp['margem_contribuicao'] > 0,
+            (df_comp['margem_contribuicao'] / margem_positiva_total * total_retiradas)
+            if margem_positiva_total > 0 else 0.0,
+            0.0
+        )
+
+        df_comp['lucro_liquido_pos_retirada'] = df_comp['margem_contribuicao'] - df_comp['retirada_proporcional']
+        df_comp['perc_retirada_sobre_margem'] = np.where(
+            df_comp['margem_contribuicao'] > 0,
+            df_comp['retirada_proporcional'] / df_comp['margem_contribuicao'] * 100,
+            0.0
+        )
+
+        df_comp['contribui_para_lucro'] = df_comp['lucro_liquido_pos_retirada'] > 0
+
+        df_comparativo = df_comp[[
+            'regime_base', 'margem_contribuicao', 'retirada_proporcional',
+            'lucro_liquido_pos_retirada', 'perc_retirada_sobre_margem', 'contribui_para_lucro'
+        ]].sort_values('lucro_liquido_pos_retirada', ascending=False).reset_index(drop=True)
+    else:
+        df_comparativo = pd.DataFrame()
+
+    return df_resumo, df_comparativo
+
+# ============================================================================
+# ANÁLISE DE ABSORÇÃO DE CUSTOS
+# ============================================================================
+
+def analise_absorcao_custos(df_margem_regime: pd.DataFrame) -> pd.DataFrame:
+    """
+    Índice de absorção de custos: identifica regimes subsidiados.
+    """
+    if df_margem_regime.empty:
+        return pd.DataFrame()
+
+    df_abs = df_margem_regime.copy()
+
+    df_abs['indice_absorcao_percentual'] = np.where(
+        df_abs['receita_total'] > 0,
+        df_abs['custo_alocado'] / df_abs['receita_total'] * 100,
+        0.0
+    )
+
+    df_abs['classificacao_absorcao'] = pd.cut(
+        df_abs['indice_absorcao_percentual'],
+        bins=[0, 50, 75, 90, 100, np.inf],
+        labels=['EFICIENTE (<50%)', 'BOM (50-75%)', 'MODERADO (75-90%)', 'ALTO (90-100%)', 'SUBSIDIADO (>100%)']
+    )
+
+    df_abs['eh_subsidiado'] = df_abs['indice_absorcao_percentual'] > 100
+
+    df_abs['deficit_a_cobrir'] = np.where(
+        df_abs['eh_subsidiado'],
+        df_abs['custo_alocado'] - df_abs['receita_total'],
+        0.0
+    )
+
+    return df_abs[[
+        'regime_base', 'receita_total', 'custo_alocado', 'margem_contribuicao',
+        'indice_absorcao_percentual', 'classificacao_absorcao', 'eh_subsidiado',
+        'deficit_a_cobrir'
+    ]].sort_values('indice_absorcao_percentual', ascending=False).reset_index(drop=True)
+
+# ============================================================================
+# ANÁLISE DE CONCENTRAÇÃO E RISCO
+# ============================================================================
+
+def analise_concentracao_risco(
+    df_margem_cliente: pd.DataFrame,
+    df_receitas: pd.DataFrame
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Curva ABC, índice de concentração e análise de risco de perda.
+    Retorna: (df_curva_abc, df_concentracao, df_diversificacao_regime)
+    """
+    df_core = df_receitas[df_receitas['tipo_receita'] == 'HONORÁRIOS'].copy()
+    receita_total = df_core['receita'].sum()
+
+    df_abc = df_margem_cliente[['cliente', 'receita', 'regime_base']].copy()
+    if df_abc.empty:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    df_abc = df_abc.sort_values('receita', ascending=False).reset_index(drop=True)
+    df_abc['rank'] = range(1, len(df_abc) + 1)
+    df_abc['receita_acumulada'] = df_abc['receita'].cumsum()
+
+    if receita_total > 0:
+        df_abc['perc_receita_individual'] = df_abc['receita'] / receita_total * 100
+        df_abc['perc_acumulado'] = df_abc['receita_acumulada'] / receita_total * 100
+    else:
+        df_abc['perc_receita_individual'] = 0.0
+        df_abc['perc_acumulado'] = 0.0
+
+    df_abc['classe_abc'] = pd.cut(
+        df_abc['perc_acumulado'],
+        bins=[0, 80, 95, 100],
+        labels=['A (até 80%)', 'B (80-95%)', 'C (95-100%)'],
+        include_lowest=True
+    )
+
+    top_3 = df_abc.head(3)['receita'].sum()
+    top_5 = df_abc.head(5)['receita'].sum()
+    top_10 = df_abc.head(10)['receita'].sum()
+
+    df_concentracao = pd.DataFrame([{
+        'top_3_clientes_receita': top_3,
+        'top_3_perc_receita_total': (top_3 / receita_total * 100) if receita_total > 0 else 0.0,
+        'top_5_clientes_receita': top_5,
+        'top_5_perc_receita_total': (top_5 / receita_total * 100) if receita_total > 0 else 0.0,
+        'top_10_clientes_receita': top_10,
+        'top_10_perc_receita_total': (top_10 / receita_total * 100) if receita_total > 0 else 0.0,
+        'risco_concentracao': 'ALTO' if receita_total > 0 and (top_3 / receita_total * 100) > 50
+        else ('MÉDIO' if receita_total > 0 and (top_3 / receita_total * 100) > 30 else 'BAIXO')
+    }])
+
+    diversif = df_core.groupby('regime_base', dropna=False)['receita'].sum().reset_index()
+    if receita_total > 0:
+        diversif['perc_receita_total'] = diversif['receita'] / receita_total * 100
+    else:
+        diversif['perc_receita_total'] = 0.0
+    diversif['indice_dependencia'] = pd.cut(
+        diversif['perc_receita_total'],
+        bins=[0, 20, 40, 60, 100],
+        labels=['BAIXA', 'MÉDIA', 'ALTA', 'CRÍTICA'],
+        include_lowest=True
+    )
+    diversif = diversif.sort_values('perc_receita_total', ascending=False).reset_index(drop=True)
+
+    return df_abc, df_concentracao, diversif
+
+# ============================================================================
+# ANÁLISE DE EFICIÊNCIA OPERACIONAL
+# ============================================================================
+
+def analise_eficiencia_operacional(
+    df_despesas_rateado: pd.DataFrame,
+    df_receitas: pd.DataFrame,
+    df_margem_regime: pd.DataFrame,
+    meses: int
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Análise de custo por departamento e ticket médio ponderado por complexidade.
+    Retorna: (df_custo_departamento, df_ticket_ponderado)
+    """
+
+    mask_trab = df_despesas_rateado['grupo'] == 'DESPESAS TRABALHISTAS'
+    df_trab = df_despesas_rateado[mask_trab & (df_despesas_rateado['departamento_final'] != "")].copy()
+
+    if not df_trab.empty:
+        df_dept = df_trab.groupby('departamento_final')['valor'].sum().reset_index()
+        df_dept.columns = ['departamento', 'custo_total']
+        df_dept['custo_mensal'] = df_dept['custo_total'] / meses
+
+        total_trab = df_dept['custo_total'].sum()
+        df_dept['perc_custo_trabalhista'] = np.where(total_trab > 0, df_dept['custo_total'] / total_trab * 100, 0.0)
+
+        receita_total = df_receitas[df_receitas['tipo_receita'] == 'HONORÁRIOS']['receita'].sum()
+        df_dept['receita_por_real_gasto'] = np.where(
+            df_dept['custo_total'] > 0,
+            receita_total / df_dept['custo_total'],
+            np.nan
+        )
+
+        df_dept = df_dept.sort_values('custo_total', ascending=False).reset_index(drop=True)
+    else:
+        df_dept = pd.DataFrame()
+
+    if not df_margem_regime.empty:
+        df_pond = df_margem_regime.copy()
+
+        df_pond['peso_complexidade'] = df_pond['regime_base'].map(PESOS_COMPLEXIDADE_REGIME).fillna(1.0)
+
+        df_pond['ticket_ponderado'] = df_pond['ticket_medio'] * df_pond['peso_complexidade']
+        df_pond['contribuicao_ponderada'] = df_pond['qtd_clientes'] * df_pond['ticket_ponderado']
+
+        total_contrib_pond = df_pond['contribuicao_ponderada'].sum()
+        df_pond['perc_contribuicao_ponderada'] = np.where(
+            total_contrib_pond > 0,
+            df_pond['contribuicao_ponderada'] / total_contrib_pond * 100,
+            0.0
+        )
+
+        df_ticket_pond = df_pond[[
+            'regime_base', 'qtd_clientes', 'peso_complexidade', 'ticket_medio',
+            'ticket_ponderado', 'contribuicao_ponderada', 'perc_contribuicao_ponderada'
+        ]].sort_values('ticket_ponderado', ascending=False).reset_index(drop=True)
+    else:
+        df_ticket_pond = pd.DataFrame()
+
+    return df_dept, df_ticket_pond
+
+# ============================================================================
+# ANÁLISE DE CENÁRIOS
+# ============================================================================
+
+def analise_cenarios(
+    df_margem_regime: pd.DataFrame,
+    df_margem_cliente: pd.DataFrame,
+    df_receitas: pd.DataFrame,
+    df_despesas_rateado: pd.DataFrame,
+    total_retiradas: float
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Simula cenários: otimista, pessimista, reajuste, ideal para retirada.
+    Retorna: (df_otimista, df_pessimista, df_reajuste, df_ideal_retirada)
+    """
+
+    receita_atual = df_receitas[df_receitas['tipo_receita'] == 'HONORÁRIOS']['receita'].sum()
+    custo_atual = df_despesas_rateado['valor'].sum()
+    resultado_atual = receita_atual - custo_atual
+
+    df_otim = df_margem_regime[df_margem_regime['margem_contribuicao'] > 0].copy()
+    if not df_otim.empty:
+        df_otim['qtd_clientes_novo'] = np.ceil(df_otim['qtd_clientes'] * 1.2).astype(int)
+        df_otim['clientes_adicionais'] = df_otim['qtd_clientes_novo'] - df_otim['qtd_clientes']
+        df_otim['receita_adicional'] = df_otim['clientes_adicionais'] * df_otim['ticket_medio']
+
+        df_otim['custo_adicional'] = df_otim['receita_adicional'] * 0.5
+        df_otim['margem_adicional'] = df_otim['receita_adicional'] - df_otim['custo_adicional']
+
+        df_otim['receita_total_novo'] = df_otim['receita_total'] + df_otim['receita_adicional']
+        df_otim['custo_total_novo'] = df_otim['custo_alocado'] + df_otim['custo_adicional']
+        df_otim['margem_total_novo'] = df_otim['receita_total_novo'] - df_otim['custo_total_novo']
+
+        receita_otim_total = df_otim['receita_total_novo'].sum()
+        custo_otim_total = df_otim['custo_total_novo'].sum()
+        resultado_otim = receita_otim_total - custo_otim_total
+    else:
+        receita_otim_total = receita_atual
+        custo_otim_total = custo_atual
+        resultado_otim = resultado_atual
+
+    df_cenario_otim = pd.DataFrame([{
+        'cenario': 'OTIMISTA (+20% clientes rentáveis)',
+        'receita_atual': receita_atual,
+        'receita_novo': receita_otim_total,
+        'receita_adicional': receita_otim_total - receita_atual,
+        'custo_atual': custo_atual,
+        'custo_novo': custo_otim_total,
+        'custo_adicional': custo_otim_total - custo_atual,
+        'resultado_atual': resultado_atual,
+        'resultado_novo': resultado_otim,
+        'resultado_adicional': resultado_otim - resultado_atual,
+        'margem_percentual_atual': (resultado_atual / receita_atual * 100) if receita_atual > 0 else 0.0,
+        'margem_percentual_novo': (resultado_otim / receita_otim_total * 100) if receita_otim_total > 0 else 0.0,
+        'retirada_atual': total_retiradas,
+        'perc_retirada_resultado_novo': (total_retiradas / resultado_otim * 100) if resultado_otim > 0 else np.nan
+    }])
+
+    top_3_clientes = df_margem_cliente.head(3)
+    receita_perdida = top_3_clientes['receita'].sum()
+    custo_economizado = top_3_clientes['custo_alocado_cliente'].sum()
+
+    receita_pess = receita_atual - receita_perdida
+    custo_pess = custo_atual - custo_economizado
+    resultado_pess = receita_pess - custo_pess
+
+    df_cenario_pess = pd.DataFrame([{
+        'cenario': 'PESSIMISTA (Perda TOP 3 clientes)',
+        'receita_atual': receita_atual,
+        'receita_novo': receita_pess,
+        'receita_perdida': receita_perdida,
+        'custo_atual': custo_atual,
+        'custo_novo': custo_pess,
+        'custo_economizado': custo_economizado,
+        'resultado_atual': resultado_atual,
+        'resultado_novo': resultado_pess,
+        'resultado_perdido': resultado_atual - resultado_pess,
+        'margem_percentual_atual': (resultado_atual / receita_atual * 100) if receita_atual > 0 else 0.0,
+        'margem_percentual_novo': (resultado_pess / receita_pess * 100) if receita_pess > 0 else 0.0,
+        'retirada_atual': total_retiradas,
+        'perc_retirada_resultado_novo': (total_retiradas / resultado_pess * 100) if resultado_pess > 0 else np.nan,
+        'viabilidade': 'VIÁVEL' if resultado_pess > total_retiradas else 'INVIÁVEL'
+    }])
+
+    receita_reaj = receita_atual * 1.15
+    custo_reaj = custo_atual * 1.05
+    resultado_reaj = receita_reaj - custo_reaj
+
+    df_cenario_reaj = pd.DataFrame([{
+        'cenario': 'REAJUSTE (+15% tickets, +5% custos)',
+        'receita_atual': receita_atual,
+        'receita_novo': receita_reaj,
+        'receita_adicional': receita_reaj - receita_atual,
+        'perc_aumento_receita': 15.0,
+        'custo_atual': custo_atual,
+        'custo_novo': custo_reaj,
+        'custo_adicional': custo_reaj - custo_atual,
+        'perc_aumento_custo': 5.0,
+        'resultado_atual': resultado_atual,
+        'resultado_novo': resultado_reaj,
+        'resultado_adicional': resultado_reaj - resultado_atual,
+        'margem_percentual_atual': (resultado_atual / receita_atual * 100) if receita_atual > 0 else 0.0,
+        'margem_percentual_novo': (resultado_reaj / receita_reaj * 100) if receita_reaj > 0 else 0.0,
+        'retirada_atual': total_retiradas,
+        'perc_retirada_resultado_novo': (total_retiradas / resultado_reaj * 100) if resultado_reaj > 0 else np.nan
+    }])
+
+    perc_retirada_ideal = 30.0
+    retirada_ideal = resultado_atual * (perc_retirada_ideal / 100)
+
+    if perc_retirada_ideal > 0:
+        resultado_minimo_necessario = total_retiradas / (perc_retirada_ideal / 100)
+    else:
+        resultado_minimo_necessario = resultado_atual
+    receita_necessaria = resultado_minimo_necessario + custo_atual
+    aumento_receita_necessario = receita_necessaria - receita_atual
+    perc_aumento_necessario = (aumento_receita_necessario / receita_atual * 100) if receita_atual > 0 else 0.0
+
+    df_ideal_detalhe = df_margem_regime[df_margem_regime['margem_contribuicao'] > 0].copy()
+    total_receita_rentaveis = df_ideal_detalhe['receita_total'].sum()
+    if total_receita_rentaveis > 0 and aumento_receita_necessario > 0:
+        df_ideal_detalhe['prop_receita'] = df_ideal_detalhe['receita_total'] / total_receita_rentaveis
+        df_ideal_detalhe['aumento_receita_regime'] = df_ideal_detalhe['prop_receita'] * aumento_receita_necessario
+        df_ideal_detalhe['receita_total_necessaria'] = df_ideal_detalhe['receita_total'] + df_ideal_detalhe['aumento_receita_regime']
+        df_ideal_detalhe['aumento_percentual_regime'] = np.where(
+            df_ideal_detalhe['receita_total'] > 0,
+            df_ideal_detalhe['aumento_receita_regime'] / df_ideal_detalhe['receita_total'] * 100,
+            0.0
+        )
+        df_ideal_detalhe['novos_clientes_necessarios'] = np.where(
+            df_ideal_detalhe['ticket_medio'] > 0,
+            np.ceil(df_ideal_detalhe['aumento_receita_regime'] / df_ideal_detalhe['ticket_medio']).astype(int),
+            0
+        )
+    else:
+        df_ideal_detalhe['prop_receita'] = 0.0
+        df_ideal_detalhe['aumento_receita_regime'] = 0.0
+        df_ideal_detalhe['receita_total_necessaria'] = df_ideal_detalhe['receita_total']
+        df_ideal_detalhe['aumento_percentual_regime'] = 0.0
+        df_ideal_detalhe['novos_clientes_necessarios'] = 0
+
+    df_cenario_ideal = pd.DataFrame([{
+        'cenario': 'IDEAL (Manter retirada em 30% resultado)',
+        'retirada_atual': total_retiradas,
+        'perc_retirada_atual_sobre_resultado': (total_retiradas / resultado_atual * 100) if resultado_atual > 0 else np.nan,
+        'perc_retirada_ideal': perc_retirada_ideal,
+        'retirada_ideal_atual': retirada_ideal,
+        'gap_retirada': total_retiradas - retirada_ideal,
+        'resultado_minimo_necessario': resultado_minimo_necessario,
+        'receita_atual': receita_atual,
+        'receita_necessaria': receita_necessaria,
+        'aumento_receita_necessario': aumento_receita_necessario,
+        'perc_aumento_necessario': perc_aumento_necessario,
+        'custo_atual': custo_atual,
+        'resultado_novo': resultado_minimo_necessario,
+        'margem_percentual_nova': (resultado_minimo_necessario / receita_necessaria * 100) if receita_necessaria > 0 else 0.0
+    }])
+
+    df_cenario_ideal_completo = pd.concat([df_cenario_ideal, df_ideal_detalhe], axis=1, sort=False)
+
+    return df_cenario_otim, df_cenario_pess, df_cenario_reaj, df_cenario_ideal_completo
+
 def gera_top_despesas(df_despesas: pd.DataFrame, top_n: int = 10):
     if df_despesas.empty:
         vazio = pd.DataFrame([{
@@ -815,10 +1688,20 @@ def _aplica_visao_com_peso(
     ticket_geral = (receita_mensal_total / total_clientes) if total_clientes > 0 else 0.0
 
     # Esforço
-    rec_regime['peso'] = rec_regime['regime_base'].map(pesos_regime).fillna(1.0)
+    rec_regime['peso_complexidade'] = rec_regime['regime_base'].map(pesos_regime).fillna(1.0)
+    media_clientes = rec_regime.loc[rec_regime['qtd_clientes'] > 0, 'qtd_clientes'].mean()
+    if not np.isfinite(media_clientes) or media_clientes <= 0:
+        media_clientes = 1.0
+    rec_regime['fator_volume'] = np.where(
+        rec_regime['qtd_clientes'] > 0,
+        (rec_regime['qtd_clientes'] / media_clientes) ** 0.15,
+        1.0
+    )
+    rec_regime['peso_ajustado'] = rec_regime['peso_complexidade'] * rec_regime['fator_volume']
+
     ng = rec_regime['qtd_clientes'].clip(lower=1)  # evita zero
     t_ratio = np.where(ticket_geral > 0, rec_regime['ticket_medio_mensal'] / ticket_geral, 1.0)
-    rec_regime['esforco'] = rec_regime['peso'] * (ng ** ALFA_VOLUME) * (t_ratio ** BETA_TICKET)
+    rec_regime['esforco'] = rec_regime['peso_ajustado'] * (ng ** ALFA_VOLUME) * (t_ratio ** BETA_TICKET)
 
     soma_esforco = rec_regime['esforco'].sum()
     rec_regime['participacao_esforco'] = np.where(soma_esforco > 0, rec_regime['esforco'] / soma_esforco, 0.0)
@@ -832,7 +1715,7 @@ def _aplica_visao_com_peso(
     rec_regime['resultado_mensal'] = rec_regime['receita_mensal'] - rec_regime['custo_mensal']
     rec_regime['resultado_medio_mensal'] = rec_regime['ticket_medio_mensal'] - rec_regime['custo_medio_mensal']
 
-    df_regime = rec_regime[['regime_base', 'qtd_clientes', 'peso',
+    df_regime = rec_regime[['regime_base', 'qtd_clientes', 'peso_complexidade', 'fator_volume', 'peso_ajustado',
                             'ticket_medio_mensal', 'participacao_esforco',
                             'receita_regime', 'receita_mensal',
                             'custo_mensal',
@@ -911,12 +1794,16 @@ def percentual_retirada_sobre_resultado(
     return float(resultado), float(total_retiradas), float(perc)
 
 # ============================================================================
-# RELATÓRIO COMPLETO
+# RELATÓRIO COMPLETO - VERSÃO EXPANDIDA
 # ============================================================================
 
 def gera_relatorio_completo():
     log: List[str] = []
     try:
+        global _SHEETS_INFO_CACHE, _PLANILHA_UNICA_CACHE
+        _SHEETS_INFO_CACHE = None
+        _PLANILHA_UNICA_CACHE = None
+
         DIRETORIO_BASE.mkdir(parents=True, exist_ok=True)
 
         # 1) Receitas (com remoção da receita de rateio-advocacia)
@@ -925,13 +1812,21 @@ def gera_relatorio_completo():
         # 2) Despesas (sem abatimento aplicado ainda)
         df_despesas = carrega_despesas(ARQUIVO_ENTRADA, log)
 
-        if df_receitas.empty and df_despesas.empty:
-            log.append("✗ ERRO: Não há dados válidos em RECEITAS e DESPESAS.")
+        if df_receitas.empty:
+            log.append("✗ ERRO: Não há dados válidos de RECEITAS. Verifique a planilha de origem.")
+            return log
+        if df_despesas.empty:
+            log.append("✗ ERRO: Não há dados válidos de DESPESAS. Verifique a planilha de origem.")
             return log
 
         # 2a) Aplica abatimento de advocacia nas ADM sem afetar pró-labores
+        total_admin_bruto = df_despesas[df_despesas['grupo'] == 'DESPESAS ADMINISTRATIVAS']['valor'].sum()
         df_despesas_abatidas = redistribui_abatimento_admin_sem_afetar_prolabores(
             df_despesas, abatimento_adm, log
+        )
+        total_admin_pos = df_despesas_abatidas[df_despesas_abatidas['grupo'] == 'DESPESAS ADMINISTRATIVAS']['valor'].sum()
+        log.append(
+            f"✓ Rateio advocacia abatido: R$ {abs(abatimento_adm):,.2f} | ADM antes: R$ {total_admin_bruto:,.2f} | ADM após: R$ {total_admin_pos:,.2f}"
         )
 
         # ---------- CENÁRIO GERAL ----------
@@ -985,9 +1880,80 @@ def gera_relatorio_completo():
             "BETA_TICKET": BETA_TICKET
         }])
 
+        # ========== NOVAS ANÁLISES ==========
+        log.append("\n" + "="*80)
+        log.append("GERANDO NOVAS ANÁLISES")
+        log.append("="*80)
+
+        meses = MESES_ACUMULADOS if MESES_ACUMULADOS > 0 else 1
+
+        # 6) MARGEM DE CONTRIBUIÇÃO
+        log.append("\n→ Calculando Margem de Contribuição...")
+        df_margem_regime, df_margem_segmento, df_margem_cliente = analise_margem_contribuicao(
+            df_receitas, df_desp_rateado_geral, meses
+        )
+
+        df_ponto_equilibrio = analise_ponto_equilibrio(df_margem_regime) if not df_margem_regime.empty else pd.DataFrame()
+        log.append(f"  ✓ Margem por Regime: {len(df_margem_regime)} registros")
+        log.append(f"  ✓ Margem por Segmento: {len(df_margem_segmento)} registros")
+        log.append(f"  ✓ Margem por Cliente: {len(df_margem_cliente)} registros")
+
+        # 7) RENTABILIDADE
+        log.append("\n→ Calculando Análise de Rentabilidade...")
+        df_roi_regime, df_clientes_deficitarios, df_ranking_rentabilidade = analise_rentabilidade(
+            df_margem_regime, df_margem_cliente
+        )
+        log.append(f"  ✓ ROI por Regime: {len(df_roi_regime)} registros")
+        log.append(f"  ✓ Clientes Deficitários: {len(df_clientes_deficitarios)} registros")
+        log.append(f"  ✓ Ranking Rentabilidade: {len(df_ranking_rentabilidade)} registros")
+
+        # 8) RETIRADA SÓCIOS COMPLETA
+        log.append("\n→ Calculando Análise Completa de Retirada dos Sócios...")
+        df_resumo_retirada_completo, df_comparativo_retirada_regime = analise_retirada_socios_completa(
+            df_receitas, df_desp_rateado_geral, total_retiradas, df_margem_regime, meses
+        )
+        log.append(f"  ✓ Resumo Retirada: {len(df_resumo_retirada_completo)} registros")
+        log.append(f"  ✓ Comparativo por Regime: {len(df_comparativo_retirada_regime)} registros")
+
+        # 9) ABSORÇÃO DE CUSTOS
+        log.append("\n→ Calculando Análise de Absorção de Custos...")
+        df_absorcao = analise_absorcao_custos(df_margem_regime)
+        log.append(f"  ✓ Absorção de Custos: {len(df_absorcao)} registros")
+
+        # 10) CONCENTRAÇÃO E RISCO
+        log.append("\n→ Calculando Análise de Concentração e Risco...")
+        df_curva_abc, df_concentracao, df_diversificacao = analise_concentracao_risco(
+            df_margem_cliente, df_receitas
+        )
+        log.append(f"  ✓ Curva ABC: {len(df_curva_abc)} registros")
+        log.append(f"  ✓ Índice Concentração: {len(df_concentracao)} registros")
+        log.append(f"  ✓ Diversificação Regime: {len(df_diversificacao)} registros")
+
+        # 11) EFICIÊNCIA OPERACIONAL
+        log.append("\n→ Calculando Análise de Eficiência Operacional...")
+        df_custo_dept, df_ticket_ponderado = analise_eficiencia_operacional(
+            df_desp_rateado_geral, df_receitas, df_margem_regime, meses
+        )
+        log.append(f"  ✓ Custo por Departamento: {len(df_custo_dept)} registros")
+        log.append(f"  ✓ Ticket Ponderado: {len(df_ticket_ponderado)} registros")
+
+        # 12) CENÁRIOS
+        log.append("\n→ Calculando Análise de Cenários...")
+        df_cenario_otim, df_cenario_pess, df_cenario_reaj, df_cenario_ideal = analise_cenarios(
+            df_margem_regime, df_margem_cliente, df_receitas, df_desp_rateado_geral, total_retiradas
+        )
+        log.append(f"  ✓ Cenário Otimista: {len(df_cenario_otim)} registros")
+        log.append(f"  ✓ Cenário Pessimista: {len(df_cenario_pess)} registros")
+        log.append(f"  ✓ Cenário Reajuste: {len(df_cenario_reaj)} registros")
+        log.append(f"  ✓ Cenário Ideal: {len(df_cenario_ideal)} registros")
+
         # ---------- GRAVAÇÃO ----------
+        log.append("\n" + "="*80)
+        log.append("GRAVANDO ARQUIVO EXCEL")
+        log.append("="*80)
+
         with pd.ExcelWriter(ARQUIVO_SAIDA, engine='openpyxl') as writer:
-            # Bases
+            # Bases originais
             if not df_receitas.empty:
                 _safe_to_excel(df_receitas, writer, 'Receitas_Base')
             if not df_despesas.empty:
@@ -1034,8 +2000,62 @@ def gera_relatorio_completo():
             if not df_seg_com_peso__noPL.empty:
                 _safe_to_excel(df_seg_com_peso__noPL, writer, 'Res_Segmento_Com_Peso_Sem_PL')
 
-            # Resumo de retirada
+            # Resumo de retirada (original)
             _safe_to_excel(resumo_retirada, writer, 'Resumo_Retirada')
+
+            # ========== NOVAS ABAS ==========
+
+            # MARGEM DE CONTRIBUIÇÃO
+            if not df_margem_regime.empty:
+                _safe_to_excel(df_margem_regime, writer, 'Margem_Contribuicao_Regime')
+            if not df_margem_segmento.empty:
+                _safe_to_excel(df_margem_segmento, writer, 'Margem_Contribuicao_Segmento')
+            if not df_margem_cliente.empty:
+                _safe_to_excel(df_margem_cliente, writer, 'Margem_Contribuicao_Cliente')
+            if not df_ponto_equilibrio.empty:
+                _safe_to_excel(df_ponto_equilibrio, writer, 'Ponto_Equilibrio_Regime')
+
+            # RENTABILIDADE
+            if not df_roi_regime.empty:
+                _safe_to_excel(df_roi_regime, writer, 'ROI_Rentabilidade_Regime')
+            if not df_clientes_deficitarios.empty:
+                _safe_to_excel(df_clientes_deficitarios, writer, 'Clientes_Deficitarios')
+            if not df_ranking_rentabilidade.empty:
+                _safe_to_excel(df_ranking_rentabilidade, writer, 'Ranking_Rentabilidade')
+
+            # RETIRADA SÓCIOS
+            if not df_resumo_retirada_completo.empty:
+                _safe_to_excel(df_resumo_retirada_completo, writer, 'Retirada_Completa')
+            if not df_comparativo_retirada_regime.empty:
+                _safe_to_excel(df_comparativo_retirada_regime, writer, 'Retirada_Por_Regime')
+
+            # ABSORÇÃO
+            if not df_absorcao.empty:
+                _safe_to_excel(df_absorcao, writer, 'Absorcao_Custos_Regime')
+
+            # CONCENTRAÇÃO E RISCO
+            if not df_curva_abc.empty:
+                _safe_to_excel(df_curva_abc, writer, 'Curva_ABC_Clientes')
+            if not df_concentracao.empty:
+                _safe_to_excel(df_concentracao, writer, 'Indice_Concentracao')
+            if not df_diversificacao.empty:
+                _safe_to_excel(df_diversificacao, writer, 'Diversificacao_Regime')
+
+            # EFICIÊNCIA
+            if not df_custo_dept.empty:
+                _safe_to_excel(df_custo_dept, writer, 'Custo_Por_Departamento')
+            if not df_ticket_ponderado.empty:
+                _safe_to_excel(df_ticket_ponderado, writer, 'Ticket_Ponderado_Complexidade')
+
+            # CENÁRIOS
+            if not df_cenario_otim.empty:
+                _safe_to_excel(df_cenario_otim, writer, 'Cenario_Otimista')
+            if not df_cenario_pess.empty:
+                _safe_to_excel(df_cenario_pess, writer, 'Cenario_Pessimista')
+            if not df_cenario_reaj.empty:
+                _safe_to_excel(df_cenario_reaj, writer, 'Cenario_Reajuste')
+            if not df_cenario_ideal.empty:
+                _safe_to_excel(df_cenario_ideal, writer, 'Cenario_Ideal_Retirada')
 
             # Log como aba
             _safe_to_excel(pd.DataFrame({"log": log}), writer, 'Log')
@@ -1049,10 +2069,13 @@ def gera_relatorio_completo():
 
         log.append("\n✓ Relatório gerado com sucesso:")
         log.append(f"  • Arquivo: {ARQUIVO_SAIDA}")
+        log.append(f"  • Total de abas: {29 + len([x for x in [df_margem_regime, df_roi_regime, df_absorcao] if not x.empty])}")
         return log
 
     except Exception as e:
+        import traceback
         log.append(f"✗ ERRO FATAL: {e}")
+        log.append(traceback.format_exc())
         return log
 
 # ============================================================================
