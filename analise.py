@@ -2,7 +2,12 @@
 # -*- coding: utf-8 -*-
 """
 Sistema de Análise Financeira Padronizada
-Versão: 3.4 - Esforço (peso+volume+ticket) + abatimento ADM sem afetar pró-labores
+Versão: 4.0 - Modelo Consolidado por Volume
+Mudanças principais:
+- Visão única baseada em complexidade × volume
+- Pró-labores tratados como retirada (fora de custos)
+- Nova aba: DRE_Simplificada
+- Abatimento advocacia não afeta pró-labores
 Python: 3.10+
 Autor: Você + IA
 Data: 2025-10-26
@@ -36,15 +41,15 @@ MESES_ACUMULADOS = 10
 TOP_N_CLIENTES  = 10
 TOP_N_DESPESAS  = 10
 
-# Pesos de complexidade por regime (visão B - COM PESO)
+# Pesos de complexidade por regime (visão única por peso)
 PESOS_COMPLEXIDADE_REGIME: Dict[str, float] = {
-    "Lucro Real": 1.6,
-    "Lucro Presumido": 1.2,
     "Simples Nacional": 1.0,
-    "PF": 0.6,
-    "Imune/Isenta": 0.6,
+    "Lucro Presumido": 1.2,
+    "Lucro Real": 1.6,
+    "PF": 0.0,
+    "Imune/Isenta": 1.2,
     "Paralisada": 0.5,
-    "Não informado": 1.0,  # fallback
+    "Não informado": 1.0,
 }
 
 # Hiperparâmetros do esforço
@@ -110,6 +115,79 @@ PROLABORE_SOCIOS = [
     "PRO-LABORE - MARCO",
     "PRO-LABORE - MATEUS",
 ]
+
+TICKET_GERAL_COLS = ["receita_mensal", "ticket_medio_mensal", "qtd_clientes"]
+TICKET_REGIME_COLS = ["regime", "clientes", "receita", "ticketMedio"]
+TICKET_REGIME_ATIV_COLS = ["regime", "atividade", "clientes", "receita", "ticketMedio"]
+TICKET_CLIENTES_COLS = ["cliente", "regime", "atividade", "receita_mensal", "ticket_mensal"]
+RESULTADO_REGIME_COLS = [
+    "regime_base",
+    "qtd_clientes",
+    "receita_mensal",
+    "custo_mensal",
+    "resultado_mensal",
+    "ticket_medio_mensal",
+    "custo_medio_mensal",
+    "resultado_medio_mensal",
+]
+RESULTADO_SEGMENTO_COLS = [
+    "regime_base",
+    "atividade",
+    "qtd_clientes",
+    "receita_mensal",
+    "custo_mensal",
+    "resultado_mensal",
+    "ticket_medio_mensal",
+    "custo_medio_mensal",
+    "resultado_medio_mensal",
+]
+
+RESULTADO_REGIME_FULL_COLS = RESULTADO_REGIME_COLS + [
+    "peso_complexidade",
+    "peso_total",
+    "participacao_peso",
+    "participacao_esforco",
+    "receita_regime",
+]
+
+
+def _empty_df(columns: List[str]) -> pd.DataFrame:
+    return pd.DataFrame(columns=columns)
+
+
+def _prepare_regime_excel(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return _empty_df(RESULTADO_REGIME_COLS)
+    base = df.copy()
+    for col in RESULTADO_REGIME_COLS:
+        if col not in base.columns:
+            base[col] = 0.0
+    base = base[RESULTADO_REGIME_COLS]
+    base['qtd_clientes'] = base['qtd_clientes'].fillna(0).astype(int)
+    return base
+
+
+def _prepare_segmento_excel(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return _empty_df(RESULTADO_SEGMENTO_COLS)
+    base = df.copy()
+    rename_map = {
+        'segmento': 'atividade',
+        'receita_mensal_segmento': 'receita_mensal',
+        'custo_mensal_segmento': 'custo_mensal',
+    }
+    for src, dst in rename_map.items():
+        if src in base.columns:
+            base[dst] = base[src]
+        elif dst not in base.columns:
+            base[dst] = 0.0
+    for col in RESULTADO_SEGMENTO_COLS:
+        if col not in base.columns:
+            base[col] = 0.0
+    base = base[RESULTADO_SEGMENTO_COLS]
+    base['qtd_clientes'] = base['qtd_clientes'].fillna(0).astype(int)
+    base['atividade'] = base['atividade'].fillna('')
+    return base
 
 # Cache para reuso de parsing
 _SHEETS_INFO_CACHE: Optional[Dict[str, Optional[str]]] = None
@@ -831,70 +909,75 @@ def gera_ticket_medio(df_receitas: pd.DataFrame):
     df_core = df_receitas[df_receitas['tipo_receita'] == 'HONORÁRIOS'].copy()
     meses = MESES_ACUMULADOS if MESES_ACUMULADOS > 0 else 1
 
+    if df_core.empty:
+        vazio_geral = _empty_df(TICKET_GERAL_COLS)
+        vazio_reg = _empty_df(TICKET_REGIME_COLS)
+        vazio_reg_ativ = _empty_df(TICKET_REGIME_ATIV_COLS)
+        vazio_cli = _empty_df(TICKET_CLIENTES_COLS + ["rank"])
+        return vazio_geral, vazio_reg, vazio_reg_ativ, vazio_cli
+
     df_clientes = (
         df_core.groupby(['cliente', 'regime_base', 'segmento'], dropna=False)['receita']
                .sum().reset_index()
     )
 
-    # Geral
     qtd_clientes = len(df_clientes)
     receita_acumulada = df_clientes['receita'].sum()
-    receita_mensal = receita_acumulada / meses
+    receita_mensal = receita_acumulada / meses if meses else receita_acumulada
     ticket_medio_mensal = (receita_mensal / qtd_clientes) if qtd_clientes > 0 else 0.0
-    ticket_mediano_mensal = (df_clientes['receita'] / meses).median() if qtd_clientes > 0 else 0.0
-    ticket_geral = pd.DataFrame([{
-        "qtd_clientes": qtd_clientes,
-        "receita_acumulada": receita_acumulada,
-        "receita_mensal": receita_mensal,
-        "ticket_medio_mensal": ticket_medio_mensal,
-        "ticket_mediano_mensal": ticket_mediano_mensal,
-    }])
 
-    # Por regime
+    ticket_geral = pd.DataFrame([{
+        "receita_mensal": float(receita_mensal),
+        "ticket_medio_mensal": float(ticket_medio_mensal),
+        "qtd_clientes": int(qtd_clientes),
+    }], columns=TICKET_GERAL_COLS)
+
     por_regime = (
         df_clientes.groupby('regime_base', dropna=False)['receita']
                    .agg(['sum', 'count']).reset_index()
     )
-    por_regime.columns = ['regime_base', 'receita_acumulada', 'qtd_clientes']
-    por_regime['receita_mensal'] = por_regime['receita_acumulada'] / meses
-    por_regime['ticket_medio_mensal'] = np.where(
-        por_regime['qtd_clientes'] > 0,
-        por_regime['receita_mensal'] / por_regime['qtd_clientes'],
-        0.0
+    por_regime.columns = ['regime', 'receita_acumulada', 'clientes']
+    por_regime['receita'] = por_regime['receita_acumulada'] / meses if meses else por_regime['receita_acumulada']
+    por_regime['ticketMedio'] = np.where(
+        por_regime['clientes'] > 0,
+        por_regime['receita'] / por_regime['clientes'],
+        0.0,
     )
-    med_reg = (
-        df_clientes.assign(rec_mensal=df_clientes['receita'] / meses)
-                   .groupby('regime_base', dropna=False)['rec_mensal']
-                   .median().reset_index(name='ticket_mediano_mensal')
-    )
-    por_regime = por_regime.merge(med_reg, on='regime_base', how='left')
+    por_regime = por_regime[TICKET_REGIME_COLS]
+    por_regime['clientes'] = por_regime['clientes'].astype(int)
 
-    # Por regime + atividade
     por_reg_ativ = (
         df_clientes.groupby(['regime_base', 'segmento'], dropna=False)['receita']
                    .agg(['sum', 'count']).reset_index()
     )
-    por_reg_ativ.columns = ['regime_base', 'segmento', 'receita_acumulada', 'qtd_clientes']
-    por_reg_ativ['receita_mensal'] = por_reg_ativ['receita_acumulada'] / meses
-    por_reg_ativ['ticket_medio_mensal'] = np.where(
-        por_reg_ativ['qtd_clientes'] > 0,
-        por_reg_ativ['receita_mensal'] / por_reg_ativ['qtd_clientes'],
-        0.0
+    por_reg_ativ.columns = ['regime', 'atividade', 'receita_acumulada', 'clientes']
+    por_reg_ativ['receita'] = por_reg_ativ['receita_acumulada'] / meses if meses else por_reg_ativ['receita_acumulada']
+    por_reg_ativ['ticketMedio'] = np.where(
+        por_reg_ativ['clientes'] > 0,
+        por_reg_ativ['receita'] / por_reg_ativ['clientes'],
+        0.0,
     )
-    med_reg_ativ = (
-        df_clientes.assign(rec_mensal=df_clientes['receita'] / meses)
-                   .groupby(['regime_base', 'segmento'], dropna=False)['rec_mensal']
-                   .median().reset_index(name='ticket_mediano_mensal')
-    )
-    por_reg_ativ = por_reg_ativ.merge(med_reg_ativ, on=['regime_base', 'segmento'], how='left')
+    por_reg_ativ = por_reg_ativ[TICKET_REGIME_ATIV_COLS]
+    por_reg_ativ['clientes'] = por_reg_ativ['clientes'].astype(int)
 
-    # Por cliente
     por_cliente = df_clientes.copy()
-    por_cliente['ticket_mensal'] = por_cliente['receita'] / meses
+    por_cliente['receita_mensal'] = por_cliente['receita'] / meses if meses else por_cliente['receita']
+    por_cliente['ticket_mensal'] = por_cliente['receita_mensal']
+    por_cliente = por_cliente.rename(columns={
+        'cliente': 'cliente',
+        'regime_base': 'regime',
+        'segmento': 'atividade',
+    })
+    por_cliente = por_cliente[['cliente', 'regime', 'atividade', 'receita_mensal', 'ticket_mensal']]
     por_cliente = por_cliente.sort_values('ticket_mensal', ascending=False).reset_index(drop=True)
-    por_cliente['rank'] = range(1, len(por_cliente) + 1)
+    por_cliente['rank'] = por_cliente.index + 1
 
-    return ticket_geral, por_regime, por_reg_ativ, por_cliente
+    return (
+        ticket_geral[TICKET_GERAL_COLS],
+        por_regime[TICKET_REGIME_COLS],
+        por_reg_ativ[TICKET_REGIME_ATIV_COLS],
+        por_cliente[TICKET_CLIENTES_COLS + ['rank']],
+    )
 
 # ============================================================================
 # ANÁLISE DE MARGEM DE CONTRIBUIÇÃO
@@ -1529,10 +1612,19 @@ def gera_top_despesas(df_despesas: pd.DataFrame, top_n: int = 10):
         }])
         return vazio, vazio
 
-    total_desp = df_despesas['valor'].sum()
+    base_desp = df_despesas.copy()
+    if 'item_nome' in base_desp.columns:
+        base_desp = base_desp[~base_desp['item_nome'].apply(is_prolabore_socio)].copy()
+
+    if base_desp.empty:
+        vazio = pd.DataFrame(columns=['rank', 'grupo', 'item_nome', 'valor', 'perc_total_despesas', 'perc_no_grupo'])
+        vazio_admin = pd.DataFrame(columns=['rank', 'item_nome', 'valor', 'perc_no_grupo'])
+        return vazio, vazio_admin
+
+    total_desp = base_desp['valor'].sum()
     base = (
-        df_despesas.groupby(['grupo', 'item_nome'], dropna=False)['valor']
-                   .sum().reset_index()
+        base_desp.groupby(['grupo', 'item_nome'], dropna=False)['valor']
+                 .sum().reset_index()
     )
     base['perc_total_despesas'] = np.where(total_desp > 0, base['valor'] / total_desp * 100, 0.0)
     total_por_grupo = base.groupby('grupo', dropna=False)['valor'].transform('sum')
@@ -1550,7 +1642,7 @@ def gera_top_despesas(df_despesas: pd.DataFrame, top_n: int = 10):
     return top_geral, top_admin
 
 # ============================================================================
-# DUAS VISÕES DE CUSTO POR ABSORÇÃO E RESULTADO (SEM PESO / COM PESO)
+# VISÃO ÚNICA DE CUSTO POR ABSORÇÃO (PESO × VOLUME)
 # ============================================================================
 
 def _clientes_por_regime(df_core: pd.DataFrame) -> pd.DataFrame:
@@ -1591,83 +1683,31 @@ def _participacoes(df_core: pd.DataFrame, meses: int):
 
     return receita_total, rec_regime, rec_seg
 
-def _aplica_visao_sem_peso(
-    df_core: pd.DataFrame,
-    df_despesas_rateado: pd.DataFrame,
-    meses: int
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Custo por absorção proporcional à receita por regime; depois por segmento dentro do regime."""
-    custo_total = df_despesas_rateado['valor'].sum() if not df_despesas_rateado.empty else 0.0
-    _, rec_regime, rec_seg = _participacoes(df_core, meses)
-
-    # por regime
-    rec_regime['custo_mensal'] = rec_regime['perc_receita_total'] * (custo_total / meses if meses else custo_total)
-
-    clientes_regime = _clientes_por_regime(df_core)
-    rec_regime = rec_regime.merge(clientes_regime, on='regime_base', how='left')
-    rec_regime['qtd_clientes'] = rec_regime['qtd_clientes'].fillna(0).astype(int)
-
-    rec_regime['ticket_medio_mensal'] = np.where(
-        rec_regime['qtd_clientes'] > 0,
-        rec_regime['receita_mensal'] / rec_regime['qtd_clientes'],
-        0.0
-    )
-    rec_regime['custo_medio_mensal'] = np.where(
-        rec_regime['qtd_clientes'] > 0,
-        rec_regime['custo_mensal'] / rec_regime['qtd_clientes'],
-        0.0
-    )
-    rec_regime['resultado_mensal'] = rec_regime['receita_mensal'] - rec_regime['custo_mensal']
-    rec_regime['resultado_medio_mensal'] = rec_regime['ticket_medio_mensal'] - rec_regime['custo_medio_mensal']
-
-    df_regime = rec_regime[['regime_base', 'qtd_clientes', 'receita_regime', 'receita_mensal',
-                            'perc_receita_total', 'custo_mensal',
-                            'ticket_medio_mensal', 'custo_medio_mensal',
-                            'resultado_mensal', 'resultado_medio_mensal']].copy()
-    df_regime = df_regime.sort_values('receita_regime', ascending=False).reset_index(drop=True)
-
-    # por (regime, segmento)
-    rec_seg = rec_seg.merge(df_regime[['regime_base', 'custo_mensal']], on='regime_base', how='left', suffixes=('', '_regime'))
-    rec_seg['custo_mensal_segmento'] = rec_seg['prop_no_regime'] * rec_seg['custo_mensal']
-
-    clientes_seg = _clientes_por_regime_segmento(df_core)
-    rec_seg = rec_seg.merge(clientes_seg, on=['regime_base', 'segmento'], how='left')
-    rec_seg['qtd_clientes'] = rec_seg['qtd_clientes'].fillna(0).astype(int)
-
-    rec_seg['ticket_medio_mensal'] = np.where(
-        rec_seg['qtd_clientes'] > 0,
-        rec_seg['receita_mensal_segmento'] / rec_seg['qtd_clientes'],
-        0.0
-    )
-    rec_seg['custo_medio_mensal'] = np.where(
-        rec_seg['qtd_clientes'] > 0,
-        rec_seg['custo_mensal_segmento'] / rec_seg['qtd_clientes'],
-        0.0
-    )
-    rec_seg['resultado_mensal'] = rec_seg['receita_mensal_segmento'] - rec_seg['custo_mensal_segmento']
-    rec_seg['resultado_medio_mensal'] = rec_seg['ticket_medio_mensal'] - rec_seg['custo_medio_mensal']
-
-    df_segmento = rec_seg[['regime_base', 'segmento', 'qtd_clientes',
-                           'receita_segmento', 'receita_mensal_segmento',
-                           'custo_mensal_segmento',
-                           'ticket_medio_mensal', 'custo_medio_mensal',
-                           'resultado_mensal', 'resultado_medio_mensal']].copy()
-    df_segmento = df_segmento.sort_values(['regime_base', 'receita_segmento'], ascending=[True, False]).reset_index(drop=True)
-
-    return df_regime, df_segmento
-
 def _aplica_visao_com_peso(
     df_core: pd.DataFrame,
     df_despesas_rateado: pd.DataFrame,
     meses: int,
     pesos_regime: Optional[Dict[str, float]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Custo por absorção proporcional à participação de ESFORÇO do regime:
-      Esforço_g = w_g * (n_g ** ALFA_VOLUME) * ((ticket_g / ticket_geral) ** BETA_TICKET)
-    onde n_g é o nº de clientes do regime e ticket_g é o ticket médio mensal do regime.
-    """
-    custo_total = df_despesas_rateado['valor'].sum() if not df_despesas_rateado.empty else 0.0
+    """Custo por absorção proporcional ao peso do regime (complexidade × volume)."""
+    if df_despesas_rateado.empty:
+        custos_adm_liquidos = total_trabalhistas = total_tributarias = total_financeiras = total_bancarias = 0.0
+    else:
+        grupos = df_despesas_rateado.groupby('grupo')['valor'].sum()
+        custos_adm_liquidos = float(grupos.get('DESPESAS ADMINISTRATIVAS', 0.0))
+        total_trabalhistas = float(grupos.get('DESPESAS TRABALHISTAS', 0.0))
+        total_tributarias = float(grupos.get('DESPESAS TRIBUTÁRIAS', 0.0))
+        total_financeiras = float(grupos.get('DESPESAS FINANCEIRAS', 0.0))
+        total_bancarias = float(grupos.get('DESPESAS BANCÁRIAS', 0.0))
+
+    custos_alocaveis = (
+        custos_adm_liquidos
+        + total_trabalhistas
+        + total_tributarias
+        + total_financeiras
+        + total_bancarias
+    )
+
     _, rec_regime, rec_seg = _participacoes(df_core, meses)
 
     if pesos_regime is None:
@@ -1677,97 +1717,127 @@ def _aplica_visao_com_peso(
     rec_regime = rec_regime.merge(clientes_regime, on='regime_base', how='left')
     rec_regime['qtd_clientes'] = rec_regime['qtd_clientes'].fillna(0).astype(int)
 
-    # Tickets por regime e ticket geral
-    total_clientes = rec_regime['qtd_clientes'].sum()
     rec_regime['ticket_medio_mensal'] = np.where(
         rec_regime['qtd_clientes'] > 0,
         rec_regime['receita_mensal'] / rec_regime['qtd_clientes'],
-        0.0
+        0.0,
     )
-    receita_mensal_total = rec_regime['receita_mensal'].sum()
-    ticket_geral = (receita_mensal_total / total_clientes) if total_clientes > 0 else 0.0
 
-    # Esforço
     rec_regime['peso_complexidade'] = rec_regime['regime_base'].map(pesos_regime).fillna(1.0)
-    media_clientes = rec_regime.loc[rec_regime['qtd_clientes'] > 0, 'qtd_clientes'].mean()
-    if not np.isfinite(media_clientes) or media_clientes <= 0:
-        media_clientes = 1.0
-    rec_regime['fator_volume'] = np.where(
-        rec_regime['qtd_clientes'] > 0,
-        (rec_regime['qtd_clientes'] / media_clientes) ** 0.15,
-        1.0
+    rec_regime['peso_total'] = rec_regime['peso_complexidade'] * rec_regime['qtd_clientes'].clip(lower=0)
+
+    soma_pesos_totais = rec_regime['peso_total'].sum()
+    rec_regime['participacao_peso'] = np.where(
+        soma_pesos_totais > 0,
+        rec_regime['peso_total'] / soma_pesos_totais,
+        0.0,
     )
-    rec_regime['peso_ajustado'] = rec_regime['peso_complexidade'] * rec_regime['fator_volume']
+    rec_regime['participacao_esforco'] = rec_regime['participacao_peso']
 
-    ng = rec_regime['qtd_clientes'].clip(lower=1)  # evita zero
-    t_ratio = np.where(ticket_geral > 0, rec_regime['ticket_medio_mensal'] / ticket_geral, 1.0)
-    rec_regime['esforco'] = rec_regime['peso_ajustado'] * (ng ** ALFA_VOLUME) * (t_ratio ** BETA_TICKET)
-
-    soma_esforco = rec_regime['esforco'].sum()
-    rec_regime['participacao_esforco'] = np.where(soma_esforco > 0, rec_regime['esforco'] / soma_esforco, 0.0)
-    rec_regime['custo_mensal'] = rec_regime['participacao_esforco'] * (custo_total / meses if meses else custo_total)
+    base_custo_mensal = custos_alocaveis / meses if meses else custos_alocaveis
+    rec_regime['custo_mensal'] = rec_regime['participacao_peso'] * base_custo_mensal
 
     rec_regime['custo_medio_mensal'] = np.where(
         rec_regime['qtd_clientes'] > 0,
         rec_regime['custo_mensal'] / rec_regime['qtd_clientes'],
-        0.0
+        0.0,
     )
     rec_regime['resultado_mensal'] = rec_regime['receita_mensal'] - rec_regime['custo_mensal']
     rec_regime['resultado_medio_mensal'] = rec_regime['ticket_medio_mensal'] - rec_regime['custo_medio_mensal']
 
-    df_regime = rec_regime[['regime_base', 'qtd_clientes', 'peso_complexidade', 'fator_volume', 'peso_ajustado',
-                            'ticket_medio_mensal', 'participacao_esforco',
-                            'receita_regime', 'receita_mensal',
-                            'custo_mensal',
-                            'custo_medio_mensal',
-                            'resultado_mensal', 'resultado_medio_mensal']].copy()
+    df_regime = rec_regime[[
+        'regime_base',
+        'qtd_clientes',
+        'peso_complexidade',
+        'peso_total',
+        'participacao_peso',
+        'participacao_esforco',
+        'receita_regime',
+        'receita_mensal',
+        'ticket_medio_mensal',
+        'custo_mensal',
+        'custo_medio_mensal',
+        'resultado_mensal',
+        'resultado_medio_mensal',
+    ]].copy()
     df_regime = df_regime.sort_values('receita_regime', ascending=False).reset_index(drop=True)
 
-    # por (regime, segmento) — distribuição interna proporcional à receita no regime
-    rec_seg = rec_seg.merge(df_regime[['regime_base', 'custo_mensal']], on='regime_base', how='left', suffixes=('', '_regime'))
-    rec_seg['custo_mensal_segmento'] = rec_seg['prop_no_regime'] * rec_seg['custo_mensal']
+    # por (regime, segmento) — distribuição interna proporcional ao peso do grupo
+    rec_seg = rec_seg.merge(
+        df_regime[['regime_base', 'custo_mensal', 'peso_complexidade']],
+        on='regime_base',
+        how='left',
+        suffixes=('', '_regime')
+    )
 
     clientes_seg = _clientes_por_regime_segmento(df_core)
     rec_seg = rec_seg.merge(clientes_seg, on=['regime_base', 'segmento'], how='left')
     rec_seg['qtd_clientes'] = rec_seg['qtd_clientes'].fillna(0).astype(int)
 
+    rec_seg['peso_grupo'] = rec_seg['peso_complexidade'] * rec_seg['qtd_clientes']
+    soma_pesos_regime = rec_seg.groupby('regime_base')['peso_grupo'].transform(lambda x: x.sum() if x.sum() > 0 else 0.0)
+    rec_seg['participacao_no_regime'] = np.where(
+        soma_pesos_regime > 0,
+        rec_seg['peso_grupo'] / soma_pesos_regime,
+        0.0,
+    )
+    rec_seg['custo_mensal_segmento'] = rec_seg['participacao_no_regime'] * rec_seg['custo_mensal']
+
     rec_seg['ticket_medio_mensal'] = np.where(
         rec_seg['qtd_clientes'] > 0,
         rec_seg['receita_mensal_segmento'] / rec_seg['qtd_clientes'],
-        0.0
+        0.0,
     )
     rec_seg['custo_medio_mensal'] = np.where(
         rec_seg['qtd_clientes'] > 0,
         rec_seg['custo_mensal_segmento'] / rec_seg['qtd_clientes'],
-        0.0
+        0.0,
     )
     rec_seg['resultado_mensal'] = rec_seg['receita_mensal_segmento'] - rec_seg['custo_mensal_segmento']
     rec_seg['resultado_medio_mensal'] = rec_seg['ticket_medio_mensal'] - rec_seg['custo_medio_mensal']
 
-    df_segmento = rec_seg[['regime_base', 'segmento', 'qtd_clientes',
-                           'receita_segmento', 'receita_mensal_segmento',
-                           'custo_mensal_segmento',
-                           'ticket_medio_mensal', 'custo_medio_mensal',
-                           'resultado_mensal', 'resultado_medio_mensal']].copy()
+    df_segmento = rec_seg[[
+        'regime_base',
+        'segmento',
+        'qtd_clientes',
+        'receita_segmento',
+        'receita_mensal_segmento',
+        'custo_mensal_segmento',
+        'ticket_medio_mensal',
+        'custo_medio_mensal',
+        'resultado_mensal',
+        'resultado_medio_mensal',
+    ]].copy()
     df_segmento = df_segmento.sort_values(['regime_base', 'receita_segmento'], ascending=[True, False]).reset_index(drop=True)
 
     return df_regime, df_segmento
 
-def custo_absorcao_duas_visoes(
+def custo_absorcao_por_peso(
     df_receitas: pd.DataFrame,
     df_despesas_rateado: pd.DataFrame,
     pesos_regime: Optional[Dict[str, float]] = None
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Gera quatro DataFrames:
-       - Regime_Sem_Peso, Segmento_Sem_Peso, Regime_Com_Peso, Segmento_Com_Peso."""
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Gera os DataFrames de resultado por regime e segmento na visão única por peso."""
     meses = MESES_ACUMULADOS if MESES_ACUMULADOS > 0 else 1
     df_core = df_receitas[df_receitas['tipo_receita'] == 'HONORÁRIOS'].copy()
     if df_core.empty:
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        vazio_reg = _empty_df(RESULTADO_REGIME_FULL_COLS)
+        vazio_seg = _empty_df([
+            'regime_base',
+            'segmento',
+            'qtd_clientes',
+            'receita_segmento',
+            'receita_mensal_segmento',
+            'custo_mensal_segmento',
+            'ticket_medio_mensal',
+            'custo_medio_mensal',
+            'resultado_mensal',
+            'resultado_medio_mensal',
+        ])
+        return vazio_reg, vazio_seg
 
-    reg_a, seg_a = _aplica_visao_sem_peso(df_core, df_despesas_rateado, meses)
-    reg_b, seg_b = _aplica_visao_com_peso(df_core, df_despesas_rateado, meses, pesos_regime=pesos_regime)
-    return reg_a, seg_a, reg_b, seg_b
+    reg, seg = _aplica_visao_com_peso(df_core, df_despesas_rateado, meses, pesos_regime=pesos_regime)
+    return reg, seg
 
 # ============================================================================
 # CENÁRIO "SEM PRÓ-LABORE" + % RETIRADA
@@ -1792,6 +1862,144 @@ def percentual_retirada_sobre_resultado(
     resultado = receitas_totais_validas - despesas_sem_prolab_total
     perc = (total_retiradas / resultado * 100.0) if resultado != 0 else np.nan
     return float(resultado), float(total_retiradas), float(perc)
+
+
+def gera_dre_simplificada(
+    df_receitas: pd.DataFrame,
+    df_despesas_rateado: pd.DataFrame,
+    total_retiradas: float,
+    abatimento_adv: float
+) -> pd.DataFrame:
+    """Gera DRE simplificada com detalhamento de despesas e indicadores percentuais."""
+
+    if df_receitas.empty:
+        return _empty_df(["linha", "valor_total", "perc_receita", "perc_resultado_liquido", "observacao"])
+
+    receita_core = float(df_receitas['receita'].sum())
+    if receita_core == 0:
+        receita_core = 0.0
+
+    if df_despesas_rateado.empty:
+        df_base = pd.DataFrame(columns=['grupo', 'valor', 'item_nome'])
+    else:
+        df_base = df_despesas_rateado.copy()
+        if 'item_nome' not in df_base.columns:
+            df_base['item_nome'] = ""
+
+    def _valor_grupo(nome: str, excluir_prolab: bool = False) -> float:
+        if df_base.empty:
+            return 0.0
+        mask = df_base['grupo'] == nome
+        if not mask.any():
+            return 0.0
+        serie = df_base.loc[mask, 'valor']
+        if excluir_prolab and 'item_nome' in df_base.columns:
+            itens = df_base.loc[mask, 'item_nome'].astype(str)
+            serie = serie.loc[~itens.apply(is_prolabore_socio)]
+        return float(serie.sum())
+
+    despesas_adm = _valor_grupo('DESPESAS ADMINISTRATIVAS', excluir_prolab=True)
+    despesas_trab = _valor_grupo('DESPESAS TRABALHISTAS')
+    despesas_trib = _valor_grupo('DESPESAS TRIBUTÁRIAS')
+    despesas_fin = _valor_grupo('DESPESAS FINANCEIRAS')
+    despesas_banc = _valor_grupo('DESPESAS BANCÁRIAS')
+
+    margem_liquida = receita_core - (
+        despesas_adm +
+        despesas_trab +
+        despesas_trib +
+        despesas_fin +
+        despesas_banc
+    )
+
+    retirada_total = float(total_retiradas or 0.0)
+    resultado_ajustado = margem_liquida - retirada_total
+
+    abatimento_total = abs(float(abatimento_adv or 0.0))
+    prolabore_total = retirada_total
+
+    observ_adm = []
+    if abatimento_total:
+        observ_adm.append(f"Conta redutora advocacia: R$ {abatimento_total:,.2f}")
+    observ_adm.append(f"Pró-labore tratado como retirada: R$ {prolabore_total:,.2f}")
+
+    perc_receita_safe = lambda valor: (valor / receita_core) if receita_core else 0.0
+    perc_resultado_pl = (retirada_total / margem_liquida) if margem_liquida else 0.0
+
+    linhas = [
+        {
+            'linha': 'Receita Total (CORE)',
+            'valor_total': receita_core,
+            'perc_receita': 1.0,
+            'perc_resultado_liquido': np.nan,
+            'observacao': ''
+        },
+        {
+            'linha': '(–) Despesas Administrativas (líquidas)',
+            'valor_total': -despesas_adm,
+            'perc_receita': perc_receita_safe(despesas_adm),
+            'perc_resultado_liquido': np.nan,
+            'observacao': ' | '.join(observ_adm)
+        },
+        {
+            'linha': '(–) Despesas Trabalhistas Rateadas',
+            'valor_total': -despesas_trab,
+            'perc_receita': perc_receita_safe(despesas_trab),
+            'perc_resultado_liquido': np.nan,
+            'observacao': ''
+        },
+        {
+            'linha': '(–) Despesas Tributárias',
+            'valor_total': -despesas_trib,
+            'perc_receita': perc_receita_safe(despesas_trib),
+            'perc_resultado_liquido': np.nan,
+            'observacao': ''
+        },
+        {
+            'linha': '(–) Despesas Financeiras',
+            'valor_total': -despesas_fin,
+            'perc_receita': perc_receita_safe(despesas_fin),
+            'perc_resultado_liquido': np.nan,
+            'observacao': ''
+        },
+        {
+            'linha': '(–) Despesas Bancárias',
+            'valor_total': -despesas_banc,
+            'perc_receita': perc_receita_safe(despesas_banc),
+            'perc_resultado_liquido': np.nan,
+            'observacao': ''
+        },
+        {
+            'linha': '= Margem de Contribuição Líquida',
+            'valor_total': margem_liquida,
+            'perc_receita': perc_receita_safe(margem_liquida),
+            'perc_resultado_liquido': 1.0,
+            'observacao': ''
+        },
+        {
+            'linha': '(–) Retiradas - Pró-labore dos Sócios',
+            'valor_total': -retirada_total,
+            'perc_receita': perc_receita_safe(retirada_total),
+            'perc_resultado_liquido': perc_resultado_pl,
+            'observacao': ''
+        },
+        {
+            'linha': '= Resultado Líquido Ajustado',
+            'valor_total': resultado_ajustado,
+            'perc_receita': perc_receita_safe(resultado_ajustado),
+            'perc_resultado_liquido': (resultado_ajustado / margem_liquida) if margem_liquida else 0.0,
+            'observacao': ''
+        },
+    ]
+
+    dre = pd.DataFrame(linhas, columns=[
+        "linha",
+        "valor_total",
+        "perc_receita",
+        "perc_resultado_liquido",
+        "observacao"
+    ])
+    return dre
 
 # ============================================================================
 # RELATÓRIO COMPLETO - VERSÃO EXPANDIDA
@@ -1837,17 +2045,32 @@ def gera_relatorio_completo():
             df_desp_rateado_geral = aplica_rateio_proporcional(df_despesas_abatidas, pesos, log)
 
         # 4) Tickets e Top despesas (geral)
-        df_ticket_geral = df_ticket_regime = df_ticket_reg_ativ = df_ticket_clientes = pd.DataFrame()
+        df_ticket_geral = _empty_df(TICKET_GERAL_COLS)
+        df_ticket_regime = _empty_df(TICKET_REGIME_COLS)
+        df_ticket_reg_ativ = _empty_df(TICKET_REGIME_ATIV_COLS)
+        df_ticket_clientes = _empty_df(TICKET_CLIENTES_COLS + ['rank'])
         if not df_receitas.empty:
             df_ticket_geral, df_ticket_regime, df_ticket_reg_ativ, df_ticket_clientes = gera_ticket_medio(df_receitas)
 
         df_top_desp, df_top_desp_admin = gera_top_despesas(df_despesas_abatidas, TOP_N_DESPESAS) if not df_despesas_abatidas.empty else (pd.DataFrame(), pd.DataFrame())
 
-        # 5) Duas visões de custo por absorção e resultados (geral)
-        (df_regime_sem_peso,
-         df_seg_sem_peso,
-         df_regime_com_peso,
-         df_seg_com_peso) = custo_absorcao_duas_visoes(df_receitas, df_desp_rateado_geral, pesos_regime=PESOS_COMPLEXIDADE_REGIME) if not df_receitas.empty else (pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
+        # 5) Visão de custo por absorção e resultados (peso único)
+        (df_regime_peso,
+         df_seg_peso) = custo_absorcao_por_peso(df_receitas, df_desp_rateado_geral, pesos_regime=PESOS_COMPLEXIDADE_REGIME) if not df_receitas.empty else (
+            _empty_df(RESULTADO_REGIME_FULL_COLS),
+            _empty_df([
+                'regime_base',
+                'segmento',
+                'qtd_clientes',
+                'receita_segmento',
+                'receita_mensal_segmento',
+                'custo_mensal_segmento',
+                'ticket_medio_mensal',
+                'custo_medio_mensal',
+                'resultado_mensal',
+                'resultado_medio_mensal',
+            ])
+        )
 
         # ---------- CENÁRIO SEM PRÓ-LABORE ----------
         df_desp_sem_prolab, total_retiradas = remover_prolabores(df_despesas_abatidas)
@@ -1856,11 +2079,9 @@ def gera_relatorio_completo():
             pesos2 = calcula_base_rateio(df_desp_sem_prolab, log)
             df_desp_rateado_sem_prolab = aplica_rateio_proporcional(df_desp_sem_prolab, pesos2, log)
 
-        # Duas visões (sem pró-labore)
-        (df_regime_sem_peso__noPL,
-         df_seg_sem_peso__noPL,
-         df_regime_com_peso__noPL,
-         df_seg_com_peso__noPL) = custo_absorcao_duas_visoes(df_receitas, df_desp_rateado_sem_prolab, pesos_regime=PESOS_COMPLEXIDADE_REGIME) if not df_receitas.empty else (pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame())
+        # Visão única (sem pró-labore)
+        (df_regime_peso__noPL,
+         df_seg_peso__noPL) = custo_absorcao_por_peso(df_receitas, df_desp_rateado_sem_prolab, pesos_regime=PESOS_COMPLEXIDADE_REGIME) if not df_receitas.empty else (pd.DataFrame(), pd.DataFrame())
 
         # % retirada sobre resultado líquido (receitas válidas - despesas sem pró-labore)
         resultado_liq_sem_pl, total_retiradas_val, perc_retirada = percentual_retirada_sobre_resultado(
@@ -1869,16 +2090,22 @@ def gera_relatorio_completo():
             total_retiradas=total_retiradas
         )
 
+        receita_total = df_receitas['receita'].sum()
         resumo_retirada = pd.DataFrame([{
-            "receitas_validas": df_receitas['receita'].sum(),
+            "receitas_validas": receita_total,
             "despesas_sem_prolabore": df_desp_sem_prolab['valor'].sum(),
             "resultado_liquido_sem_prolabore": resultado_liq_sem_pl,
             "retiradas_prolabore_socios": total_retiradas_val,
             "percentual_retirada_sobre_resultado_%": perc_retirada,
+            "retiradas_total": total_retiradas_val,
+            "perc_retiradas_sobre_receita": (total_retiradas_val / receita_total * 100) if receita_total else 0.0,
+            "perc_retiradas_sobre_resultado_liquido_pre_retirada": perc_retirada,
             "abatimento_rateio_advocacia_aplicado": -abs(abatimento_adm),
             "ALFA_VOLUME": ALFA_VOLUME,
             "BETA_TICKET": BETA_TICKET
         }])
+
+        df_dre = gera_dre_simplificada(df_receitas, df_desp_rateado_geral, total_retiradas_val, abatimento_adm)
 
         # ========== NOVAS ANÁLISES ==========
         log.append("\n" + "="*80)
@@ -1952,6 +2179,18 @@ def gera_relatorio_completo():
         log.append("GRAVANDO ARQUIVO EXCEL")
         log.append("="*80)
 
+        checks_validacao = valida_resultado(df_despesas_abatidas, abatimento_adm, df_regime_peso)
+        if checks_validacao:
+            log.append("\nVALIDAÇÕES DO MODELO")
+            for chk in checks_validacao:
+                log.append(f"  • {chk}")
+
+        df_regime_peso_excel = _prepare_regime_excel(df_regime_peso)
+        df_seg_peso_excel = _prepare_segmento_excel(df_seg_peso)
+        df_regime_peso_no_pl_excel = _prepare_regime_excel(df_regime_peso__noPL)
+        df_seg_peso_no_pl_excel = _prepare_segmento_excel(df_seg_peso__noPL)
+
+        total_abas = 0
         with pd.ExcelWriter(ARQUIVO_SAIDA, engine='openpyxl') as writer:
             # Bases originais
             if not df_receitas.empty:
@@ -1968,11 +2207,10 @@ def gera_relatorio_completo():
                 _safe_to_excel(df_desp_rateado_sem_prolab, writer, 'Despesas_Rateadas_Sem_PL')
 
             # Tickets / Clientes
-            if not df_ticket_geral.empty:
-                _safe_to_excel(df_ticket_geral, writer, 'Ticket_Geral')
-                _safe_to_excel(df_ticket_regime, writer, 'Ticket_Regime')
-                _safe_to_excel(df_ticket_reg_ativ, writer, 'Ticket_Regime_Atividade')
-                _safe_to_excel(df_ticket_clientes, writer, 'Ticket_Clientes')
+            _safe_to_excel(df_ticket_geral, writer, 'Ticket_Geral')
+            _safe_to_excel(df_ticket_regime, writer, 'Ticket_Regime')
+            _safe_to_excel(df_ticket_reg_ativ, writer, 'Ticket_Regime_Atividade')
+            _safe_to_excel(df_ticket_clientes, writer, 'Ticket_Clientes')
 
             # Top despesas (geral)
             if not df_top_desp.empty:
@@ -1981,27 +2219,16 @@ def gera_relatorio_completo():
                 _safe_to_excel(df_top_desp_admin, writer, 'Top_Despesas_Adm')
 
             # Resultado por regime/segmento - CENÁRIO GERAL
-            if not df_regime_sem_peso.empty:
-                _safe_to_excel(df_regime_sem_peso, writer, 'Resultado_Regime_Sem_Peso')
-            if not df_seg_sem_peso.empty:
-                _safe_to_excel(df_seg_sem_peso, writer, 'Resultado_Segmento_Sem_Peso')
-            if not df_regime_com_peso.empty:
-                _safe_to_excel(df_regime_com_peso, writer, 'Resultado_Regime_Com_Peso')
-            if not df_seg_com_peso.empty:
-                _safe_to_excel(df_seg_com_peso, writer, 'Resultado_Segmento_Com_Peso')
+            _safe_to_excel(df_regime_peso_excel, writer, 'Resultado_Regime_Com_Peso')
+            _safe_to_excel(df_seg_peso_excel, writer, 'Resultado_Segmento_Com_Peso')
 
             # Resultado por regime/segmento - CENÁRIO SEM PRÓ-LABORE
-            if not df_regime_sem_peso__noPL.empty:
-                _safe_to_excel(df_regime_sem_peso__noPL, writer, 'Res_Regime_Sem_Peso_Sem_PL')
-            if not df_seg_sem_peso__noPL.empty:
-                _safe_to_excel(df_seg_sem_peso__noPL, writer, 'Res_Segmento_Sem_Peso_Sem_PL')
-            if not df_regime_com_peso__noPL.empty:
-                _safe_to_excel(df_regime_com_peso__noPL, writer, 'Res_Regime_Com_Peso_Sem_PL')
-            if not df_seg_com_peso__noPL.empty:
-                _safe_to_excel(df_seg_com_peso__noPL, writer, 'Res_Segmento_Com_Peso_Sem_PL')
+            _safe_to_excel(df_regime_peso_no_pl_excel, writer, 'Res_Regime_Com_Peso_Sem_PL')
+            _safe_to_excel(df_seg_peso_no_pl_excel, writer, 'Res_Segmento_Com_Peso_Sem_PL')
 
             # Resumo de retirada (original)
             _safe_to_excel(resumo_retirada, writer, 'Resumo_Retirada')
+            _safe_to_excel(df_dre, writer, 'DRE_Simplificada')
 
             # ========== NOVAS ABAS ==========
 
@@ -2060,6 +2287,11 @@ def gera_relatorio_completo():
             # Log como aba
             _safe_to_excel(pd.DataFrame({"log": log}), writer, 'Log')
 
+            try:
+                total_abas = len(writer.book.sheetnames)
+            except Exception:
+                total_abas = 0
+
         # Log em arquivo texto
         try:
             with open(ARQUIVO_LOG, "w", encoding="utf-8") as f:
@@ -2069,7 +2301,10 @@ def gera_relatorio_completo():
 
         log.append("\n✓ Relatório gerado com sucesso:")
         log.append(f"  • Arquivo: {ARQUIVO_SAIDA}")
-        log.append(f"  • Total de abas: {29 + len([x for x in [df_margem_regime, df_roi_regime, df_absorcao] if not x.empty])}")
+        if total_abas:
+            log.append(f"  • Total de abas: {total_abas}")
+        else:
+            log.append("  • Total de abas: não disponível")
         return log
 
     except Exception as e:
@@ -2081,6 +2316,37 @@ def gera_relatorio_completo():
 # ============================================================================
 # MAIN
 # ============================================================================
+
+def valida_resultado(
+    df_despesas_abatidas: pd.DataFrame,
+    abatimento_adm: float,
+    df_regime_peso: pd.DataFrame,
+) -> List[str]:
+    checks: List[str] = []
+
+    if df_despesas_abatidas is not None and not df_despesas_abatidas.empty:
+        prolabores = df_despesas_abatidas[
+            df_despesas_abatidas['item_nome'].apply(is_prolabore_socio)
+        ]['valor'].sum()
+        checks.append(f"Pró-labores identificados: R$ {prolabores:,.2f}")
+    else:
+        checks.append("Pró-labores identificados: R$ 0,00")
+
+    checks.append(f"Abatimento advocacia: R$ {abatimento_adm:,.2f}")
+
+    if df_regime_peso is not None and not df_regime_peso.empty:
+        soma_participacoes = df_regime_peso['participacao_esforco'].sum()
+        checks.append(f"Soma participações: {soma_participacoes:.4f} (deve ser ~1.0)")
+
+        for _, row in df_regime_peso.iterrows():
+            diff = abs(row['resultado_mensal'] - (row['receita_mensal'] - row['custo_mensal']))
+            if diff > 0.01:
+                checks.append(f"⚠️ Divergência em {row['regime_base']}: R$ {diff:,.2f}")
+    else:
+        checks.append("Soma participações: 0.0000 (deve ser ~1.0)")
+
+    return checks
+
 
 if __name__ == "__main__":
     logs = gera_relatorio_completo()
