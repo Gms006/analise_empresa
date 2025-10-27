@@ -111,6 +111,10 @@ PROLABORE_SOCIOS = [
     "PRO-LABORE - MATEUS",
 ]
 
+# Cache para reuso de parsing
+_SHEETS_INFO_CACHE: Optional[Dict[str, Optional[str]]] = None
+_PLANILHA_UNICA_CACHE: Optional[Dict[str, pd.DataFrame]] = None
+
 # ============================================================================
 # SANITIZAÇÃO PARA EXCEL (evita fórmulas removidas)
 # ============================================================================
@@ -312,6 +316,222 @@ def classifica_departamento_fuzzy(colaborador: str) -> Tuple[str, int]:
 # CARREGAMENTO DOS DADOS
 # ============================================================================
 
+def _detectar_abas_excel(caminho: Path, log: List[str]) -> Dict[str, Optional[str]]:
+    """Determina se o arquivo possui abas separadas ou layout combinado."""
+    global _SHEETS_INFO_CACHE
+    if _SHEETS_INFO_CACHE is not None:
+        return _SHEETS_INFO_CACHE
+
+    info: Dict[str, Optional[str]] = {
+        'modo': None,
+        'sheet_receitas': None,
+        'sheet_despesas': None,
+        'sheet_unica': None,
+        'erro': None,
+    }
+
+    try:
+        xls = pd.ExcelFile(caminho)
+    except Exception as e:
+        info['erro'] = str(e)
+        log.append(f"✗ ERRO ao abrir '{caminho}': {e}")
+        _SHEETS_INFO_CACHE = info
+        return info
+
+    sheets = xls.sheet_names
+    log.append(f"✓ Abas encontradas: {sheets}")
+
+    def _fuzzy_find(keywords: List[str]) -> Tuple[Optional[str], float]:
+        melhor_nome = None
+        melhor_score = 0.0
+        for sheet in sheets:
+            sheet_norm = sheet.lower()
+            for alvo in keywords:
+                score = fuzz.partial_ratio(sheet_norm, alvo)
+                if score > melhor_score:
+                    melhor_score = score
+                    melhor_nome = sheet
+        return melhor_nome, melhor_score
+
+    sheet_rec, score_rec = _fuzzy_find(["receita", "receitas"])
+    sheet_desp, score_desp = _fuzzy_find(["despesa", "despesas"])
+
+    threshold = 70.0
+    if (
+        sheet_rec
+        and sheet_desp
+        and sheet_rec != sheet_desp
+        and score_rec >= threshold
+        and score_desp >= threshold
+    ):
+        info['modo'] = 'duas_abas'
+        info['sheet_receitas'] = sheet_rec
+        info['sheet_despesas'] = sheet_desp
+        log.append(
+            f"→ Estratégia de leitura: abas dedicadas (Receitas='{sheet_rec}', Despesas='{sheet_desp}')"
+        )
+    else:
+        # fallback para aba única combinada
+        sheet_unica: Optional[str] = None
+        if len(sheets) == 1:
+            sheet_unica = sheets[0]
+        else:
+            for candidato in [sheet_rec, sheet_desp] + sheets:
+                if candidato:
+                    sheet_unica = candidato
+                    break
+        if sheet_unica is None:
+            info['erro'] = 'Nenhuma aba disponível para leitura.'
+            log.append("✗ ERRO: Nenhuma aba encontrada no arquivo.")
+        else:
+            info['modo'] = 'aba_unica'
+            info['sheet_unica'] = sheet_unica
+            if sheet_rec and sheet_desp and sheet_rec == sheet_desp:
+                log.append(
+                    f"→ Estratégia de leitura: aba única '{sheet_unica}' (receitas+despesas na mesma guia)"
+                )
+            else:
+                log.append(
+                    f"→ Estratégia de leitura: aba única '{sheet_unica}' (layout combinado)"
+                )
+
+    _SHEETS_INFO_CACHE = info
+    return info
+
+
+def _coluna_por_indice(df: pd.DataFrame, indice: int) -> Optional[str]:
+    if indice < len(df.columns):
+        return df.columns[indice]
+    return None
+
+
+def _parse_planilha_unica(
+    caminho: Path,
+    sheet_name: str,
+    log: List[str]
+) -> Dict[str, pd.DataFrame]:
+    """Parser específico para o layout combinado (Planilha única)."""
+    global _PLANILHA_UNICA_CACHE
+    if _PLANILHA_UNICA_CACHE is not None:
+        return _PLANILHA_UNICA_CACHE
+
+    try:
+        df_raw = pd.read_excel(caminho, sheet_name=sheet_name, header=0)
+    except Exception as e:
+        log.append(f"✗ ERRO ao ler aba única '{sheet_name}': {e}")
+        _PLANILHA_UNICA_CACHE = {
+            'df_receitas': pd.DataFrame(),
+            'df_despesas': pd.DataFrame(),
+            'valor_rateio_adv': 0.0,
+            'linhas_receitas_lidas': 0,
+            'linhas_despesas_lidas': 0,
+            'erro': str(e),
+        }
+        return _PLANILHA_UNICA_CACHE
+
+    # ---------------- RECEITAS ----------------
+    col_cliente = _coluna_por_indice(df_raw, 0)
+    col_regime = _coluna_por_indice(df_raw, 1)
+    col_receita = _coluna_por_indice(df_raw, 2)
+
+    df_receitas_raw = df_raw[[c for c in [col_cliente, col_regime, col_receita] if c is not None]].copy()
+    df_receitas_raw.columns = ['cliente', 'regime_original', 'receita'][: len(df_receitas_raw.columns)]
+    df_receitas_raw = df_receitas_raw.dropna(how='all')
+
+    df_receitas_norm = pd.DataFrame()
+    if not df_receitas_raw.empty and {'cliente', 'regime_original', 'receita'}.issubset(df_receitas_raw.columns):
+        df_receitas_norm['cliente'] = df_receitas_raw['cliente'].apply(
+            lambda x: str(x).strip() if pd.notna(x) else ""
+        )
+        df_receitas_norm['regime_original'] = df_receitas_raw['regime_original'].apply(
+            lambda x: str(x).strip() if pd.notna(x) else ""
+        )
+        df_receitas_norm['receita'] = df_receitas_raw['receita'].apply(converte_para_numero)
+        df_receitas_norm['empresa_padronizada'] = df_receitas_norm['cliente'].apply(
+            lambda x: normaliza_texto(x, remover_acentos=True, minuscula=False).upper()
+        )
+        df_receitas_norm[['regime_base', 'segmento']] = df_receitas_norm['regime_original'].apply(
+            lambda x: pd.Series(parse_regime_e_segmento(x))
+        )
+        df_receitas_norm['tipo_receita'] = df_receitas_norm['cliente'].apply(classifica_tipo_receita)
+        df_receitas_norm['is_rateio_adv'] = df_receitas_norm['cliente'].apply(is_rateio_advocacia)
+    else:
+        df_receitas_norm = pd.DataFrame(columns=[
+            'cliente', 'regime_original', 'receita', 'empresa_padronizada',
+            'regime_base', 'segmento', 'tipo_receita', 'is_rateio_adv'
+        ])
+
+    valor_rateio_adv = df_receitas_norm.loc[df_receitas_norm['is_rateio_adv'], 'receita'].sum()
+    df_receitas_norm = df_receitas_norm[~df_receitas_norm['is_rateio_adv']].copy()
+    df_receitas_norm = df_receitas_norm[df_receitas_norm['cliente'] != ""].copy()
+
+    # ---------------- DESPESAS ----------------
+    def _col_por_nome_ou_indice(prefixo: str, fallback_indice: int) -> Optional[str]:
+        for col in df_raw.columns:
+            if isinstance(col, str) and col.strip().lower().startswith(prefixo):
+                return col
+        return _coluna_por_indice(df_raw, fallback_indice)
+
+    col_adm_item = _col_por_nome_ou_indice('unnamed: 6', 6)
+    col_adm_valor = _col_por_nome_ou_indice('unnamed: 7', 7)
+    col_trab_item = _col_por_nome_ou_indice('unnamed: 9', 9)
+    col_trab_valor = _col_por_nome_ou_indice('unnamed: 10', 10)
+
+    registros: List[pd.DataFrame] = []
+
+    def _monta_bloco(col_item: Optional[str], col_valor: Optional[str], grupo: str) -> pd.DataFrame:
+        if col_item is None or col_valor is None:
+            return pd.DataFrame(columns=['grupo', 'item_nome', 'valor', 'id_linha'])
+        bloco = df_raw[[col_item, col_valor]].copy()
+        bloco.columns = ['item_nome', 'valor']
+        bloco['item_nome_raw'] = bloco['item_nome']
+        bloco['valor_raw'] = bloco['valor']
+        bloco['item_nome'] = bloco['item_nome'].apply(
+            lambda x: str(x).strip() if pd.notna(x) else ""
+        )
+        bloco['valor'] = bloco['valor'].apply(converte_para_numero)
+        labels_excluir = {'VALOR', 'DESPESAS ADMINISTRATIVAS', 'DESPESAS TRABALHISTAS', 'TOTAL'}
+        bloco = bloco[~bloco['item_nome'].str.upper().isin(labels_excluir)]
+        bloco = bloco[~bloco['valor_raw'].apply(
+            lambda x: str(x).strip().upper() if pd.notna(x) else ""
+        ).isin(labels_excluir)]
+        bloco = bloco[~((bloco['item_nome'] == "") & (bloco['valor'] == 0.0))]
+        bloco['grupo'] = grupo
+        bloco['id_linha'] = bloco.index + 2  # aproximado ao nº de linha no Excel
+        return bloco[['grupo', 'item_nome', 'valor', 'id_linha']]
+
+    registros.append(_monta_bloco(col_adm_item, col_adm_valor, 'DESPESAS ADMINISTRATIVAS'))
+    registros.append(_monta_bloco(col_trab_item, col_trab_valor, 'DESPESAS TRABALHISTAS'))
+
+    df_despesas_norm = pd.concat(registros, ignore_index=True) if registros else pd.DataFrame()
+    if df_despesas_norm.empty:
+        df_despesas_norm = pd.DataFrame(columns=['grupo', 'item_nome', 'valor', 'id_linha'])
+
+    df_despesas_norm['tipo_trabalhista'] = ""
+    df_despesas_norm['colaborador'] = ""
+    df_despesas_norm['departamento_classificado'] = ""
+    df_despesas_norm['fuzzy_score'] = 0.0
+
+    mask_trab = df_despesas_norm['grupo'] == 'DESPESAS TRABALHISTAS'
+    if mask_trab.any():
+        df_despesas_norm.loc[mask_trab, 'tipo_trabalhista'] = df_despesas_norm.loc[mask_trab, 'item_nome'].apply(classifica_tipo_trabalhista)
+        df_despesas_norm.loc[mask_trab, 'colaborador'] = df_despesas_norm.loc[mask_trab, 'item_nome'].apply(extrai_colaborador)
+        classificacoes = df_despesas_norm.loc[mask_trab, 'colaborador'].apply(
+            lambda x: classifica_departamento_fuzzy(x) if x else ("SEM MATCH", 0)
+        )
+        df_despesas_norm.loc[mask_trab, 'departamento_classificado'] = [c[0] for c in classificacoes]
+        df_despesas_norm.loc[mask_trab, 'fuzzy_score'] = np.array([c[1] for c in classificacoes], dtype=float)
+
+    _PLANILHA_UNICA_CACHE = {
+        'df_receitas': df_receitas_norm,
+        'df_despesas': df_despesas_norm,
+        'valor_rateio_adv': float(valor_rateio_adv),
+        'linhas_receitas_lidas': int(len(df_receitas_raw)),
+        'linhas_despesas_lidas': int(len(df_despesas_norm)),
+        'erro': None,
+    }
+    return _PLANILHA_UNICA_CACHE
+
 def carrega_receitas(caminho: Path, log: List[str]) -> Tuple[pd.DataFrame, float]:
     """
     Lê RECEITAS e retorna (df_receitas_validas, valor_rateio_advocacia),
@@ -320,49 +540,63 @@ def carrega_receitas(caminho: Path, log: List[str]) -> Tuple[pd.DataFrame, float
     log.append("\n" + "-"*80)
     log.append("PROCESSANDO RECEITAS")
     log.append("-"*80)
-    try:
-        df = pd.read_excel(caminho, sheet_name="RECEITAS")
-        log.append(f"✓ Linhas lidas: {len(df)}")
-    except Exception as e:
-        log.append(f"✗ ERRO ao ler RECEITAS: {e}")
+    info = _detectar_abas_excel(caminho, log)
+    if info.get('erro') and info['erro']:
+        log.append("✗ ERRO: Não foi possível detectar as abas de receitas.")
         return pd.DataFrame(), 0.0
 
-    df.columns = [normaliza_texto(str(c), remover_acentos=True, minuscula=False).upper() for c in df.columns]
+    modo = info.get('modo')
+    if modo == 'aba_unica':
+        cache = _parse_planilha_unica(caminho, info.get('sheet_unica', ''), log)
+        if cache.get('erro'):
+            log.append("✗ ERRO: Falha ao interpretar aba única de receitas.")
+            return pd.DataFrame(), 0.0
+        df_norm = cache['df_receitas'].copy()
+        valor_rateio_adv = cache['valor_rateio_adv']
+        log.append(f"✓ Linhas lidas (aba única): {cache['linhas_receitas_lidas']}")
+    else:
+        sheet_receitas = info.get('sheet_receitas') or 'RECEITAS'
+        try:
+            df = pd.read_excel(caminho, sheet_name=sheet_receitas)
+            log.append(f"✓ Linhas lidas ({sheet_receitas}): {len(df)}")
+        except Exception as e:
+            log.append(f"✗ ERRO ao ler RECEITAS ('{sheet_receitas}'): {e}")
+            return pd.DataFrame(), 0.0
 
-    col_cliente = col_regime = col_receita = None
-    for col in df.columns:
-        col_norm = normaliza_texto(col, remover_acentos=True, minuscula=True)
-        if "honorario" in col_norm and "contab" in col_norm:
-            col_cliente = col
-        elif "regime" in col_norm and "empresa" in col_norm:
-            col_regime = col
-        elif "receita" in col_norm:
-            col_receita = col
+        df.columns = [normaliza_texto(str(c), remover_acentos=True, minuscula=False).upper() for c in df.columns]
 
-    if not all([col_cliente, col_regime, col_receita]):
-        log.append(f"✗ ERRO: Colunas esperadas não encontradas em RECEITAS. Disponíveis: {df.columns.tolist()}")
-        return pd.DataFrame(), 0.0
+        col_cliente = col_regime = col_receita = None
+        for col in df.columns:
+            col_norm = normaliza_texto(col, remover_acentos=True, minuscula=True)
+            if "honorario" in col_norm and "contab" in col_norm:
+                col_cliente = col
+            elif "regime" in col_norm and "empresa" in col_norm:
+                col_regime = col
+            elif "receita" in col_norm:
+                col_receita = col
 
-    df_norm = pd.DataFrame()
-    df_norm['cliente']          = df[col_cliente].apply(lambda x: str(x).strip() if pd.notna(x) else "")
-    df_norm['regime_original']  = df[col_regime].apply(lambda x: str(x).strip() if pd.notna(x) else "")
-    df_norm['receita']          = df[col_receita].apply(converte_para_numero)
-    df_norm['empresa_padronizada'] = df_norm['cliente'].apply(
-        lambda x: normaliza_texto(x, remover_acentos=True, minuscula=False).upper()
-    )
-    df_norm[['regime_base', 'segmento']] = df_norm['regime_original'].apply(
-        lambda x: pd.Series(parse_regime_e_segmento(x))
-    )
+        if not all([col_cliente, col_regime, col_receita]):
+            log.append(f"✗ ERRO: Colunas esperadas não encontradas em RECEITAS. Disponíveis: {df.columns.tolist()}")
+            return pd.DataFrame(), 0.0
 
-    # Identifica e separa as receitas de rateio-advocacia (abatimento)
-    df_norm['is_rateio_adv'] = df_norm['cliente'].apply(is_rateio_advocacia)
-    valor_rateio_adv = df_norm.loc[df_norm['is_rateio_adv'], 'receita'].sum()
+        df_norm = pd.DataFrame()
+        df_norm['cliente'] = df[col_cliente].apply(lambda x: str(x).strip() if pd.notna(x) else "")
+        df_norm['regime_original'] = df[col_regime].apply(lambda x: str(x).strip() if pd.notna(x) else "")
+        df_norm['receita'] = df[col_receita].apply(converte_para_numero)
+        df_norm['empresa_padronizada'] = df_norm['cliente'].apply(
+            lambda x: normaliza_texto(x, remover_acentos=True, minuscula=False).upper()
+        )
+        df_norm[['regime_base', 'segmento']] = df_norm['regime_original'].apply(
+            lambda x: pd.Series(parse_regime_e_segmento(x))
+        )
+        df_norm['tipo_receita'] = df_norm['cliente'].apply(classifica_tipo_receita)
+        df_norm['is_rateio_adv'] = df_norm['cliente'].apply(is_rateio_advocacia)
+        valor_rateio_adv = df_norm.loc[df_norm['is_rateio_adv'], 'receita'].sum()
+        df_norm = df_norm[~df_norm['is_rateio_adv']].copy()
 
-    # Remove essas linhas do dataset de receitas (não serão receita)
-    df_norm = df_norm[~df_norm['is_rateio_adv']].copy()
+    if 'is_rateio_adv' in df_norm.columns:
+        df_norm = df_norm.drop(columns=['is_rateio_adv'])
 
-    # Classificação do restante
-    df_norm['tipo_receita'] = df_norm['cliente'].apply(classifica_tipo_receita)
     df_norm = df_norm[df_norm['cliente'] != ""].copy()
 
     log.append(f"✓ Receitas válidas (já excluído rateio-advocacia): {len(df_norm)}")
@@ -376,50 +610,64 @@ def carrega_despesas(caminho: Path, log: List[str]) -> pd.DataFrame:
     log.append("\n" + "-"*80)
     log.append("PROCESSANDO DESPESAS")
     log.append("-"*80)
-    try:
-        df = pd.read_excel(caminho, sheet_name="DESPESAS", header=None)
-        log.append(f"✓ Linhas lidas: {len(df)}")
-    except Exception as e:
-        log.append(f"✗ ERRO ao ler DESPESAS: {e}")
+    info = _detectar_abas_excel(caminho, log)
+    if info.get('erro') and info['erro']:
+        log.append("✗ ERRO: Não foi possível detectar as abas de despesas.")
         return pd.DataFrame()
 
-    registros = []
-    for idx in range(1, len(df)):
-        grupo_raw = df.iloc[idx, 0] if len(df.columns) > 0 else None
-        nome_raw  = df.iloc[idx, 1] if len(df.columns) > 1 else None
-        valor_raw = df.iloc[idx, 2] if len(df.columns) > 2 else None
+    modo = info.get('modo')
+    if modo == 'aba_unica':
+        cache = _parse_planilha_unica(caminho, info.get('sheet_unica', ''), log)
+        if cache.get('erro'):
+            log.append("✗ ERRO: Falha ao interpretar aba única de despesas.")
+            return pd.DataFrame()
+        df_norm = cache['df_despesas'].copy()
+        log.append(f"✓ Linhas lidas (aba única): {cache['linhas_despesas_lidas']}")
+    else:
+        sheet_despesas = info.get('sheet_despesas') or 'DESPESAS'
+        try:
+            df = pd.read_excel(caminho, sheet_name=sheet_despesas, header=None)
+            log.append(f"✓ Linhas lidas ({sheet_despesas}): {len(df)}")
+        except Exception as e:
+            log.append(f"✗ ERRO ao ler DESPESAS ('{sheet_despesas}'): {e}")
+            return pd.DataFrame()
 
-        if pd.isna(grupo_raw) and pd.isna(nome_raw) and pd.isna(valor_raw):
-            continue
+        registros = []
+        for idx in range(1, len(df)):
+            grupo_raw = df.iloc[idx, 0] if len(df.columns) > 0 else None
+            nome_raw = df.iloc[idx, 1] if len(df.columns) > 1 else None
+            valor_raw = df.iloc[idx, 2] if len(df.columns) > 2 else None
 
-        grupo = classifica_grupo_despesa(grupo_raw)
-        nome  = str(nome_raw).strip() if pd.notna(nome_raw) else ""
-        valor = converte_para_numero(valor_raw)
+            if pd.isna(grupo_raw) and pd.isna(nome_raw) and pd.isna(valor_raw):
+                continue
 
-        if nome and valor != 0:
-            registros.append({'grupo': grupo, 'item_nome': nome, 'valor': valor, 'id_linha': idx + 1})
+            grupo = classifica_grupo_despesa(grupo_raw)
+            nome = str(nome_raw).strip() if pd.notna(nome_raw) else ""
+            valor = converte_para_numero(valor_raw)
 
-    df_norm = pd.DataFrame(registros)
-    if df_norm.empty:
-        log.append("⚠ AVISO: Nenhuma despesa válida")
-        return df_norm
+            if nome and valor != 0:
+                registros.append({'grupo': grupo, 'item_nome': nome, 'valor': valor, 'id_linha': idx + 1})
 
-    # Enriquecimento para trabalhistas
-    mask_trab = df_norm['grupo'] == "DESPESAS TRABALHISTAS"
-    df_norm['tipo_trabalhista'] = ""
-    df_norm['colaborador'] = ""
-    df_norm['departamento_classificado'] = ""
-    df_norm['fuzzy_score'] = 0.0  # dtype float para evitar FutureWarning
+        df_norm = pd.DataFrame(registros)
+        if df_norm.empty:
+            log.append("⚠ AVISO: Nenhuma despesa válida")
+            return df_norm
 
-    if mask_trab.any():
-        df_norm.loc[mask_trab, 'tipo_trabalhista'] = df_norm.loc[mask_trab, 'item_nome'].apply(classifica_tipo_trabalhista)
-        df_norm.loc[mask_trab, 'colaborador'] = df_norm.loc[mask_trab, 'item_nome'].apply(extrai_colaborador)
+        df_norm['tipo_trabalhista'] = ""
+        df_norm['colaborador'] = ""
+        df_norm['departamento_classificado'] = ""
+        df_norm['fuzzy_score'] = 0.0  # dtype float para evitar FutureWarning
 
-        classificacoes = df_norm.loc[mask_trab, 'colaborador'].apply(
-            lambda x: classifica_departamento_fuzzy(x) if x else ("SEM MATCH", 0)
-        )
-        df_norm.loc[mask_trab, 'departamento_classificado'] = [c[0] for c in classificacoes]
-        df_norm.loc[mask_trab, 'fuzzy_score'] = np.array([c[1] for c in classificacoes], dtype=float)
+        mask_trab = df_norm['grupo'] == "DESPESAS TRABALHISTAS"
+        if mask_trab.any():
+            df_norm.loc[mask_trab, 'tipo_trabalhista'] = df_norm.loc[mask_trab, 'item_nome'].apply(classifica_tipo_trabalhista)
+            df_norm.loc[mask_trab, 'colaborador'] = df_norm.loc[mask_trab, 'item_nome'].apply(extrai_colaborador)
+
+            classificacoes = df_norm.loc[mask_trab, 'colaborador'].apply(
+                lambda x: classifica_departamento_fuzzy(x) if x else ("SEM MATCH", 0)
+            )
+            df_norm.loc[mask_trab, 'departamento_classificado'] = [c[0] for c in classificacoes]
+            df_norm.loc[mask_trab, 'fuzzy_score'] = np.array([c[1] for c in classificacoes], dtype=float)
 
     log.append(f"✓ Total de despesas normalizadas: {len(df_norm)}")
     for grp in sorted(df_norm['grupo'].unique()):
@@ -1440,10 +1688,20 @@ def _aplica_visao_com_peso(
     ticket_geral = (receita_mensal_total / total_clientes) if total_clientes > 0 else 0.0
 
     # Esforço
-    rec_regime['peso'] = rec_regime['regime_base'].map(pesos_regime).fillna(1.0)
+    rec_regime['peso_complexidade'] = rec_regime['regime_base'].map(pesos_regime).fillna(1.0)
+    media_clientes = rec_regime.loc[rec_regime['qtd_clientes'] > 0, 'qtd_clientes'].mean()
+    if not np.isfinite(media_clientes) or media_clientes <= 0:
+        media_clientes = 1.0
+    rec_regime['fator_volume'] = np.where(
+        rec_regime['qtd_clientes'] > 0,
+        (rec_regime['qtd_clientes'] / media_clientes) ** 0.15,
+        1.0
+    )
+    rec_regime['peso_ajustado'] = rec_regime['peso_complexidade'] * rec_regime['fator_volume']
+
     ng = rec_regime['qtd_clientes'].clip(lower=1)  # evita zero
     t_ratio = np.where(ticket_geral > 0, rec_regime['ticket_medio_mensal'] / ticket_geral, 1.0)
-    rec_regime['esforco'] = rec_regime['peso'] * (ng ** ALFA_VOLUME) * (t_ratio ** BETA_TICKET)
+    rec_regime['esforco'] = rec_regime['peso_ajustado'] * (ng ** ALFA_VOLUME) * (t_ratio ** BETA_TICKET)
 
     soma_esforco = rec_regime['esforco'].sum()
     rec_regime['participacao_esforco'] = np.where(soma_esforco > 0, rec_regime['esforco'] / soma_esforco, 0.0)
@@ -1457,7 +1715,7 @@ def _aplica_visao_com_peso(
     rec_regime['resultado_mensal'] = rec_regime['receita_mensal'] - rec_regime['custo_mensal']
     rec_regime['resultado_medio_mensal'] = rec_regime['ticket_medio_mensal'] - rec_regime['custo_medio_mensal']
 
-    df_regime = rec_regime[['regime_base', 'qtd_clientes', 'peso',
+    df_regime = rec_regime[['regime_base', 'qtd_clientes', 'peso_complexidade', 'fator_volume', 'peso_ajustado',
                             'ticket_medio_mensal', 'participacao_esforco',
                             'receita_regime', 'receita_mensal',
                             'custo_mensal',
@@ -1542,6 +1800,10 @@ def percentual_retirada_sobre_resultado(
 def gera_relatorio_completo():
     log: List[str] = []
     try:
+        global _SHEETS_INFO_CACHE, _PLANILHA_UNICA_CACHE
+        _SHEETS_INFO_CACHE = None
+        _PLANILHA_UNICA_CACHE = None
+
         DIRETORIO_BASE.mkdir(parents=True, exist_ok=True)
 
         # 1) Receitas (com remoção da receita de rateio-advocacia)
@@ -1550,13 +1812,21 @@ def gera_relatorio_completo():
         # 2) Despesas (sem abatimento aplicado ainda)
         df_despesas = carrega_despesas(ARQUIVO_ENTRADA, log)
 
-        if df_receitas.empty and df_despesas.empty:
-            log.append("✗ ERRO: Não há dados válidos em RECEITAS e DESPESAS.")
+        if df_receitas.empty:
+            log.append("✗ ERRO: Não há dados válidos de RECEITAS. Verifique a planilha de origem.")
+            return log
+        if df_despesas.empty:
+            log.append("✗ ERRO: Não há dados válidos de DESPESAS. Verifique a planilha de origem.")
             return log
 
         # 2a) Aplica abatimento de advocacia nas ADM sem afetar pró-labores
+        total_admin_bruto = df_despesas[df_despesas['grupo'] == 'DESPESAS ADMINISTRATIVAS']['valor'].sum()
         df_despesas_abatidas = redistribui_abatimento_admin_sem_afetar_prolabores(
             df_despesas, abatimento_adm, log
+        )
+        total_admin_pos = df_despesas_abatidas[df_despesas_abatidas['grupo'] == 'DESPESAS ADMINISTRATIVAS']['valor'].sum()
+        log.append(
+            f"✓ Rateio advocacia abatido: R$ {abs(abatimento_adm):,.2f} | ADM antes: R$ {total_admin_bruto:,.2f} | ADM após: R$ {total_admin_pos:,.2f}"
         )
 
         # ---------- CENÁRIO GERAL ----------
