@@ -160,7 +160,7 @@
     <!--
     Relatório Financeiro - Análise v4.0
     Características:
-    - Visão única COM PESO (complexidade × volume)
+    - Visão única consolidada por complexidade × volume
     - DRE Simplificada com margem líquida
     - Pró-labores separados do resultado operacional
     -->
@@ -188,12 +188,12 @@
         <div class="kpi" id="kpi-resultado-medio">
           <div class="label">Resultado Médio Mensal (cliente)</div>
           <div class="value">—</div>
-          <div class="desc">Considerando rateio com peso</div>
+          <div class="desc">Após custos alocados</div>
         </div>
-        <div class="kpi warn" id="kpi-resultado-com-peso">
+        <div class="kpi warn" id="kpi-resultado-total">
           <div class="label">Resultado Total</div>
           <div class="value">—</div>
-          <div class="desc"><span id="kpi-margem-com-peso" class="pill">—</span></div>
+          <div class="desc"><span id="kpi-margem-resultado" class="pill">—</span></div>
         </div>
       </div>
       <div class="divider"></div>
@@ -219,7 +219,7 @@
     <div class="grid cols-2" style="margin-top:16px">
       <section class="card" id="card-segmento">
         <div class="card-header">
-          <h2 style="margin:0">Resultado por Regime + Atividade (Com Peso)</h2>
+          <h2 style="margin:0">Resultado por Regime + Atividade</h2>
           <div class="card-actions">
             <span class="badge warn hidden" data-status-sheet="Resultado_Segmento_Com_Peso">Sem dados</span>
             <button class="btn-sm" data-export="tabSegmentoComPeso">⬇️ Exportar CSV</button>
@@ -349,25 +349,24 @@
         qtd_clientes: ['qtd_clientes','clientes','n_clientes','total_clientes']
       },
       Ticket_Regime:{
-        regime_base: ['regime_base','regime'],
-        qtd_clientes: ['qtd_clientes','clientes'],
-        receita_mensal: ['receita_mensal','receita_total_mensal','receitamensal'],
-        ticket_medio_mensal: ['ticket_medio_mensal','ticket_mensal','ticketmedio'],
-        ticket_mediano_mensal: ['ticket_mediano_mensal','ticket_mediano','ticketmediano']
+        regime:['regime','regime_base'],
+        clientes:['clientes','qtd_clientes'],
+        receita:['receita','receita_mensal','receita_total_mensal'],
+        ticketMedio:['ticketmedio','ticket_medio','ticket_medio_mensal','ticket_mensal']
       },
       Ticket_Regime_Atividade:{
-        regime_base:['regime_base','regime'],
-        segmento:['segmento','atividade'],
-        qtd_clientes:['qtd_clientes','clientes'],
-        receita_mensal:['receita_mensal','receita_total_mensal'],
-        ticket_medio_mensal:['ticket_medio_mensal','ticket_mensal'],
-        ticket_mediano_mensal:['ticket_mediano_mensal','ticket_mediano']
+        regime:['regime','regime_base'],
+        atividade:['atividade','segmento'],
+        clientes:['clientes','qtd_clientes'],
+        receita:['receita','receita_mensal','receita_total_mensal'],
+        ticketMedio:['ticketmedio','ticket_medio','ticket_medio_mensal','ticket_mensal']
       },
       Ticket_Clientes:{
         rank:['rank','#'],
         cliente:['cliente','empresa','razao_social'],
-        regime_base:['regime_base','regime'],
-        segmento:['segmento','atividade'],
+        regime:['regime','regime_base'],
+        atividade:['atividade','segmento'],
+        receita_mensal:['receita_mensal','receita'],
         ticket_mensal:['ticket_mensal','ticket_medio_mensal','ticket']
       },
       Resultado_Regime_Com_Peso:{
@@ -375,15 +374,21 @@
         qtd_clientes:['qtd_clientes','clientes'],
         receita_mensal:['receita_mensal','receita_total_mensal'],
         custo_mensal:['custo_mensal','custo_total_mensal'],
-        resultado_mensal:['resultado_mensal','lucro_mensal']
+        resultado_mensal:['resultado_mensal','lucro_mensal'],
+        ticket_medio_mensal:['ticket_medio_mensal','ticket_mensal'],
+        custo_medio_mensal:['custo_medio_mensal','custo_medio'],
+        resultado_medio_mensal:['resultado_medio_mensal','resultado_medio']
       },
       Resultado_Segmento_Com_Peso:{
         regime_base:['regime_base','regime'],
-        segmento:['segmento','atividade'],
+        atividade:['atividade','segmento'],
         qtd_clientes:['qtd_clientes','clientes'],
-        receita_mensal_segmento:['receita_mensal_segmento','receita_mensal','receita'],
-        custo_mensal_segmento:['custo_mensal_segmento','custo_mensal','custo'],
-        resultado_mensal:['resultado_mensal','lucro_mensal']
+        receita_mensal:['receita_mensal','receita'],
+        custo_mensal:['custo_mensal','custo'],
+        resultado_mensal:['resultado_mensal','lucro_mensal'],
+        ticket_medio_mensal:['ticket_medio_mensal','ticket_mensal'],
+        custo_medio_mensal:['custo_medio_mensal','custo_medio'],
+        resultado_medio_mensal:['resultado_medio_mensal','resultado_medio']
       },
       Top_Despesas:{
         rank:['rank','#'],
@@ -451,15 +456,27 @@
       let ticketMedio = asNum(pick(g0,'ticket_medio_mensal','Ticket_Geral'));
       if(!ticketMedio && receitaMensal && clientes) ticketMedio = receitaMensal / clientes;
 
-      let receitaComPeso = sum(S.rc, r=> pick(r,'receita_mensal','Resultado_Regime_Com_Peso')) || receitaMensal;
-      let custoComPeso   = sum(S.rc, r=> pick(r,'custo_mensal','Resultado_Regime_Com_Peso'));
-      let resComPeso     = sum(S.rc, r=> pick(r,'resultado_mensal','Resultado_Regime_Com_Peso'));
-      if(!resComPeso && receitaComPeso && custoComPeso) resComPeso = receitaComPeso - custoComPeso;
+      let receitaAlocada = sum(S.rc, r=> pick(r,'receita_mensal','Resultado_Regime_Com_Peso'));
+      if(!receitaAlocada){
+        receitaAlocada = sum(S.segc, r=> pick(r,'receita_mensal','Resultado_Segmento_Com_Peso'));
+      }
+      if(!receitaAlocada){
+        receitaAlocada = receitaMensal;
+      }
+      let custoAlocado   = sum(S.rc, r=> pick(r,'custo_mensal','Resultado_Regime_Com_Peso'));
+      if(!custoAlocado){
+        custoAlocado = sum(S.segc, r=> pick(r,'custo_mensal','Resultado_Segmento_Com_Peso'));
+      }
+      let resultadoTotal     = sum(S.rc, r=> pick(r,'resultado_mensal','Resultado_Regime_Com_Peso'));
+      if(!resultadoTotal){
+        resultadoTotal = sum(S.segc, r=> pick(r,'resultado_mensal','Resultado_Segmento_Com_Peso'));
+      }
+      if(!resultadoTotal && receitaAlocada && custoAlocado) resultadoTotal = receitaAlocada - custoAlocado;
 
-      const custoMedio = clientes ? (custoComPeso||0)/clientes : 0;
-      const resultadoMedio = clientes ? (resComPeso||0)/clientes : 0;
+      const custoMedio = clientes ? (custoAlocado||0)/clientes : 0;
+      const resultadoMedio = clientes ? (resultadoTotal||0)/clientes : 0;
 
-      return { receitaMensal, clientes, ticketMedio, custoMedio, resultadoMedio, resComPeso, receitaComPeso };
+      return { receitaMensal, clientes, ticketMedio, custoMedio, resultadoMedio, resultadoTotal, receitaAlocada };
     }
 
     function fillKPIs(k){
@@ -470,12 +487,12 @@
       document.querySelector('#kpi-custo-medio .value').textContent    = BRL.format(k.custoMedio||0);
       document.querySelector('#kpi-resultado-medio .value').textContent = BRL.format(k.resultadoMedio||0);
 
-      const mB = k.receitaComPeso ? (k.resComPeso||0)/k.receitaComPeso : 0;
+      const mB = k.receitaAlocada ? (k.resultadoTotal||0)/k.receitaAlocada : 0;
 
-      const kpiRes=document.getElementById('kpi-resultado-com-peso');
+      const kpiRes=document.getElementById('kpi-resultado-total');
       kpiRes.querySelector('.label').textContent = 'Resultado Total';
-      kpiRes.querySelector('.value').textContent = BRL.format(k.resComPeso||0);
-      const tagB = document.getElementById('kpi-margem-com-peso');
+      kpiRes.querySelector('.value').textContent = BRL.format(k.resultadoTotal||0);
+      const tagB = document.getElementById('kpi-margem-resultado');
       tagB.textContent = PCT.format(mB);
       tagB.classList.toggle('positive', mB>=0);
       tagB.classList.toggle('negative', mB<0);
@@ -483,7 +500,7 @@
 
     function rowsResultadoRegime(rows, sheet){
       const clientesByReg = Object.fromEntries(
-        (window._S?.tr||[]).map(r=>[ String(pick(r,'regime_base','Ticket_Regime')||'').toLowerCase(), asNum(pick(r,'qtd_clientes','Ticket_Regime')) ])
+        (window._S?.tr||[]).map(r=>[ String(pick(r,'regime','Ticket_Regime')||'').toLowerCase(), asNum(pick(r,'clientes','Ticket_Regime')) ])
       );
 
       return (rows||[]).map(r=>{
@@ -494,15 +511,21 @@
         if(!res && (rec||cus)) res = rec - cus;
         let cli = asNum(pick(r,'qtd_clientes',sheet));
         if(!cli) cli = clientesByReg[regime.toLowerCase()]||0;
+        let ticket = asNum(pick(r,'ticket_medio_mensal',sheet));
+        if(!ticket && cli) ticket = cli ? rec/cli : 0;
+        let custoMedio = asNum(pick(r,'custo_medio_mensal',sheet));
+        if(!custoMedio && cli) custoMedio = cli ? cus/cli : 0;
+        let resultadoMedio = asNum(pick(r,'resultado_medio_mensal',sheet));
+        if(!resultadoMedio && cli) resultadoMedio = cli ? res/cli : 0;
         return {
           regime,
           clientes:cli,
           receita:rec,
           custo:cus,
           resultado:res,
-          ticketMedio: cli? rec/cli : 0,
-          custoMedio: cli? cus/cli : 0,
-          resultadoMedio: cli? res/cli : 0,
+          ticketMedio: ticket,
+          custoMedio,
+          resultadoMedio,
           margem: rec? res/rec:0
         };
       });
@@ -511,51 +534,56 @@
     function rowsResultadoSegmento(rows){
       return (rows||[]).map(r=>{
         const regime = pick(r,'regime_base','Resultado_Segmento_Com_Peso')||'';
-        const seg = pick(r,'segmento','Resultado_Segmento_Com_Peso')||'';
+        const seg = pick(r,'atividade','Resultado_Segmento_Com_Peso')||'';
         const cli = asNum(pick(r,'qtd_clientes','Resultado_Segmento_Com_Peso'));
-        const rec = asNum(pick(r,'receita_mensal_segmento','Resultado_Segmento_Com_Peso'));
-        const cus = asNum(pick(r,'custo_mensal_segmento','Resultado_Segmento_Com_Peso'));
+        const rec = asNum(pick(r,'receita_mensal','Resultado_Segmento_Com_Peso'));
+        const cus = asNum(pick(r,'custo_mensal','Resultado_Segmento_Com_Peso'));
         let res  = asNum(pick(r,'resultado_mensal','Resultado_Segmento_Com_Peso'));
         if(!res && (rec||cus)) res = rec - cus;
+        let custoMedio = asNum(pick(r,'custo_medio_mensal','Resultado_Segmento_Com_Peso'));
+        if(!custoMedio && cli) custoMedio = cli? cus/cli:0;
+        let resultadoMedio = asNum(pick(r,'resultado_medio_mensal','Resultado_Segmento_Com_Peso'));
+        if(!resultadoMedio && cli) resultadoMedio = cli? res/cli:0;
+        let ticket = asNum(pick(r,'ticket_medio_mensal','Resultado_Segmento_Com_Peso'));
+        if(!ticket && cli) ticket = cli? rec/cli:0;
         return {
           regime,
-          segmento:seg,
+          atividade:seg,
           clientes:cli,
           receita:rec,
           custo:cus,
           resultado:res,
-          custoMedio: cli? cus/cli:0,
-          resultadoMedio: cli? res/cli:0
+          custoMedio,
+          resultadoMedio,
+          ticketMedio: ticket
         };
       });
     }
 
     function rowsTicketRegime(rows){
       return (rows||[]).map(r=>{
-        const regime = pick(r,'regime_base','Ticket_Regime')||'';
-        const cli = asNum(pick(r,'qtd_clientes','Ticket_Regime'));
-        let rec = asNum(pick(r,'receita_mensal','Ticket_Regime'));
+        const regime = pick(r,'regime','Ticket_Regime')||'';
+        const cli = asNum(pick(r,'clientes','Ticket_Regime'));
+        let rec = asNum(pick(r,'receita','Ticket_Regime'));
         if(!rec){
           const byReg = Object.fromEntries((window._S?.rc||[]).map(x=>[ String(pick(x,'regime_base','Resultado_Regime_Com_Peso')||'').toLowerCase(), asNum(pick(x,'receita_mensal','Resultado_Regime_Com_Peso')) ]));
-          rec = byReg[regime.toLowerCase()]||0;
+          rec = byReg[String(regime||'').toLowerCase()]||0;
         }
-        let ticket = asNum(pick(r,'ticket_medio_mensal','Ticket_Regime'));
+        let ticket = asNum(pick(r,'ticketMedio','Ticket_Regime'));
         if(!ticket && (rec||cli)) ticket = cli? rec/cli:0;
-        const mediano = asNum(pick(r,'ticket_mediano_mensal','Ticket_Regime'));
-        return {regime, clientes:cli, receita:rec, ticketMedio:ticket, ticketMediano:mediano};
+        return {regime, clientes:cli, receita:rec, ticketMedio:ticket};
       });
     }
 
     function rowsTicketRegimeAtividade(rows){
       return (rows||[]).map(r=>{
-        const regime = pick(r,'regime_base','Ticket_Regime_Atividade')||'';
-        const segmento = pick(r,'segmento','Ticket_Regime_Atividade')||'';
-        const clientes = asNum(pick(r,'qtd_clientes','Ticket_Regime_Atividade'));
-        const receita = asNum(pick(r,'receita_mensal','Ticket_Regime_Atividade'));
-        let ticket = asNum(pick(r,'ticket_medio_mensal','Ticket_Regime_Atividade'));
+        const regime = pick(r,'regime','Ticket_Regime_Atividade')||'';
+        const atividade = pick(r,'atividade','Ticket_Regime_Atividade')||'';
+        const clientes = asNum(pick(r,'clientes','Ticket_Regime_Atividade'));
+        const receita = asNum(pick(r,'receita','Ticket_Regime_Atividade'));
+        let ticket = asNum(pick(r,'ticketMedio','Ticket_Regime_Atividade'));
         if(!ticket && clientes) ticket = clientes? receita/clientes:0;
-        const mediano = asNum(pick(r,'ticket_mediano_mensal','Ticket_Regime_Atividade'));
-        return {regime, segmento, clientes, receita, ticketMedio:ticket, ticketMediano:mediano};
+        return {regime, atividade, clientes, receita, ticketMedio:ticket};
       });
     }
 
@@ -563,8 +591,9 @@
       return (rows||[]).map(r=>({
         rank: asNum(pick(r,'rank','Ticket_Clientes')) || asNum(r.rank) || 0,
         cliente: pick(r,'cliente','Ticket_Clientes')||'',
-        regime: pick(r,'regime_base','Ticket_Clientes')||'',
-        segmento: pick(r,'segmento','Ticket_Clientes')||'',
+        regime: pick(r,'regime','Ticket_Clientes')||'',
+        atividade: pick(r,'atividade','Ticket_Clientes')||'',
+        receita_mensal: asNum(pick(r,'receita_mensal','Ticket_Clientes')),
         ticket: asNum(pick(r,'ticket_mensal','Ticket_Clientes'))
       }));
     }
@@ -777,7 +806,7 @@
       if(!state.searchTerm) return rows;
       const term=state.searchTerm.toLowerCase();
       return rows.filter(row=>{
-        const keys=['regime','regime_base','segmento','cliente','linha'].filter(key=>row[key]!==undefined && row[key]!==null);
+        const keys=['regime','regime_base','segmento','atividade','cliente','linha'].filter(key=>row[key]!==undefined && row[key]!==null);
         if(!keys.length) return true;
         return keys.some(key=> String(row[key]).toLowerCase().includes(term));
       });
@@ -806,7 +835,7 @@
       document.getElementById('meta-adv').textContent = abatimento ? BRL.format(abatimento) : '–';
     }
     function renderResultadoRegime(){
-      const comPeso = applySearch(state.datasets.resultadoRegimeComPeso||[]);
+      const regimesData = applySearch(state.datasets.resultadoRegimeComPeso||[]);
       tableFromData('tabRegimeComPeso',[
         {key:'regime',label:'Regime'},
         {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
@@ -817,7 +846,7 @@
         {key:'resultado',label:'Resultado',right:true,format:v=>{const val=asNum(v);return (val>=0?'<span class="pill positive">':'<span class="pill negative">')+BRL.format(val)+'</span>';},export:v=>asNum(v)},
         {key:'resultadoMedio',label:'Resultado Médio',right:true,format:v=>BRL.format(asNum(v))},
         {key:'margem',label:'Margem',right:true,format:v=>PCT.format(asNum(v))}
-      ], comPeso, {
+      ], regimesData, {
         onRowClick:(row)=>{
           state.filters.segmentRegime=row.regime||null;
           renderSegmentos();
@@ -839,7 +868,7 @@
       const finalRows = applySearch(filtered);
       tableFromData('tabSegmentoComPeso',[
         {key:'regime',label:'Regime'},
-        {key:'segmento',label:'Atividade'},
+        {key:'atividade',label:'Atividade'},
         {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
         {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
         {key:'custo',label:'Custo Mensal',right:true,format:v=>BRL.format(asNum(v))},
@@ -862,7 +891,6 @@
         {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
         {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
         {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'ticketMediano',label:'Ticket Mediano',right:true,format:v=>BRL.format(asNum(v))},
         {key:'perc_receita',label:'% Receita',right:true,format:v=>PCT.format(asNum(v))},
         {key:'perc_clientes',label:'% Clientes',right:true,format:v=>PCT.format(asNum(v))},
         {key:'indice_concentracao',label:'Índice Concentração',right:true,format:v=>DEC.format(asNum(v))}
@@ -891,11 +919,10 @@
       const regAtiv = applySearch((state.datasets.ticketRegimeAtividade||[]).filter(filterByRegime));
       tableFromData('tabTicketsRegAtiv',[
         {key:'regime',label:'Regime'},
-        {key:'segmento',label:'Atividade'},
+        {key:'atividade',label:'Atividade'},
         {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
         {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'ticketMediano',label:'Ticket Mediano',right:true,format:v=>BRL.format(asNum(v))}
+        {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))}
       ], regAtiv);
       statusBadge('Ticket_Regime_Atividade', (state.datasets.ticketRegimeAtividade||[]).length>0);
 
@@ -905,7 +932,7 @@
         {key:'rank',label:'#',right:true,format:v=>INT.format(asNum(v))},
         {key:'cliente',label:'Cliente'},
         {key:'regime',label:'Regime'},
-        {key:'segmento',label:'Atividade'},
+        {key:'atividade',label:'Atividade'},
         {key:'ticket',label:'Ticket Mensal',right:true,format:v=>BRL.format(asNum(v))}
       ], finalClientes);
       statusBadge('Ticket_Clientes', (state.datasets.ticketClientes||[]).length>0);
@@ -1009,12 +1036,12 @@
       }
 
       const totalCom = sum(state.datasets.resultadoRegimeComPeso||[], r=> r.resultado);
-      const diffCom = percentDiff(state.kpis?.resComPeso||0, totalCom);
+      const diffCom = percentDiff(state.kpis?.resultadoTotal||0, totalCom);
       checks.push({
         status:Math.abs(diffCom)<=0.03?'ok':'warn',
-        title:'Somatório Resultado Com Peso',
+        title:'Somatório Resultado Consolidado',
         diff:diffCom,
-        detail:`KPI: ${BRL.format(state.kpis?.resComPeso||0)} | Soma Regimes: ${BRL.format(totalCom)}`
+        detail:`KPI: ${BRL.format(state.kpis?.resultadoTotal||0)} | Soma Regimes: ${BRL.format(totalCom)}`
       });
 
       const segmentosRows = state.datasets.resultadoSegmentoComPeso||[];
@@ -1034,7 +1061,7 @@
         });
         checks.push({
           status:divergencias.length?'warn':'ok',
-          title:'Segmento (Regime + Atividade) × Regime Com Peso',
+          title:'Segmento (Regime + Atividade) × Regime consolidado',
           diff:0,
           detail:divergencias.length?divergencias.join('\n'):'Sem divergências relevantes (≤1%)'
         });

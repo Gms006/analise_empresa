@@ -10,12 +10,12 @@
 - ❌ Seção "Comparativo Sem Peso × Com Peso"
 
 ### Adicionado
-- ✅ Peso único: `peso_base × qtd_clientes`
+- ✅ Rateio consolidado: `peso_base × qtd_clientes`
 - ✅ Aba "DRE_Simplificada"
 - ✅ Campos em Resumo_Retirada: retiradas_total, %_retiradas_sobre_receita, %_retiradas_sobre_resultado
 - ✅ Tratamento pró-labore como retirada (não custo)
 
 ### Modificado
 - 🔄 Abatimento advocacia não afeta pró-labores
-- 🔄 Apropriação de custos sempre usa peso
+- 🔄 Apropriação de custos sempre usa rateio consolidado
 - 🔄 KPI renomeado: "Resultado Total (Com Peso)" → "Resultado Total"
