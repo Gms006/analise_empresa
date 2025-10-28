@@ -356,6 +356,49 @@
     const DEC = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:2});
     const INT = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:0});
 
+    const SHEET_ALIASES = {
+      'Ticket_Geral':['Ticket_Geral'],
+      'Ticket_Regime':['Ticket_Regime','Ticket_Reg'],
+      'Ticket_Regime_Atividade':['Ticket_Regime_Atividade','Ticket_Reg_Atividade'],
+      'Ticket_Clientes':['Ticket_Clientes'],
+      'Resultado_Regime_Com_Peso':['Resultado_Regime_Com_Peso','Res_Regime_Com_Peso'],
+      'Resultado_Segmento_Com_Peso':['Resultado_Segmento_Com_Peso','Res_Segmento_Com_Peso'],
+      'Resumo_Retirada':['Resumo_Retirada'],
+      'Top_Despesas':['Top_Despesas'],
+      'DRE_Simplificada':['DRE_Simplificada','DRE_Simples'],
+      'DRE_Margem_Contribuicao':['DRE_Margem_Contribuicao','DRE_Margem_Contrib']
+    };
+
+    const canonicalSheetName = (name)=>{
+      if(!name && name!==0) return '';
+      const lower = String(name).toLowerCase();
+      for(const [canonical, aliases] of Object.entries(SHEET_ALIASES)){
+        if(canonical.toLowerCase()===lower) return canonical;
+        if((aliases||[]).some(alias=>String(alias).toLowerCase()===lower)) return canonical;
+      }
+      return String(name);
+    };
+
+    const sheetCandidateNames = (name)=>{
+      const canonical = canonicalSheetName(name);
+      const aliases = SHEET_ALIASES[canonical] || [];
+      const candidates = [canonical, ...aliases];
+      return Array.from(new Set(candidates.map(n=>String(n))));
+    };
+
+    const findSheetName = (wb, name)=>{
+      if(!wb || !Array.isArray(wb.SheetNames)) return null;
+      const sheets = wb.SheetNames.map(raw=>({raw, lower:String(raw).toLowerCase()}));
+      for(const candidate of sheetCandidateNames(name)){
+        const lower = String(candidate).toLowerCase();
+        const found = sheets.find(entry=>entry.lower===lower);
+        if(found) return found.raw;
+      }
+      return null;
+    };
+
+    const hasSheet = (wb, name)=> !!findSheetName(wb, name);
+
     const sum = (rows, getter) => (rows||[]).reduce((a,r)=> a + asNum(getter(r)), 0);
 
     // ---------- Metadados de schema ----------
@@ -366,6 +409,7 @@
       (wb.SheetNames||[]).forEach(name=>{
         if(!name.startsWith('_metadata_')) return;
         const base = name.replace(/^_metadata_/, '');
+        const canonical = canonicalSheetName(base);
         const sheet = wb.Sheets[name];
         if(!sheet) return;
         const rows = XLSX.utils.sheet_to_json(sheet) || [];
@@ -380,13 +424,13 @@
             descricao: entry.descricao ?? entry.Descricao ?? entry.DESCRICAO ?? ''
           };
         });
-        result[base] = { rows, lookup };
+        result[canonical] = { rows, lookup };
       });
       return result;
     }
 
     function getSchemaKey(sheetName, field){
-      const schema = schemas[sheetName];
+      const schema = schemas[canonicalSheetName(sheetName)];
       if(!schema) return normalizeKey(field);
       const entry = schema.lookup[normalizeKey(field)];
       return entry ? normalizeKey(entry.campo) : normalizeKey(field);
@@ -401,7 +445,9 @@
     }
 
     function sheetRows(wb, name){
-      const sh = wb.Sheets[name];
+      const actual = findSheetName(wb, name);
+      if(!actual) return null;
+      const sh = wb.Sheets[actual];
       if(!sh) return null;
       const rows = XLSX.utils.sheet_to_json(sh);
       return rows.map(rowToMap);
@@ -705,11 +751,12 @@
     }
 
     const tryGetSheet = (wb,name)=>{
-      if(!wb.SheetNames.includes(name)) return null;
+      const actual = findSheetName(wb, name) || (wb && wb.Sheets && wb.Sheets[name] ? name : null);
+      if(!actual) return null;
       try{
-        return XLSX.utils.sheet_to_json(wb.Sheets[name]);
+        return XLSX.utils.sheet_to_json(wb.Sheets[actual]);
       }catch(e){
-        console.error(`Erro ao ler aba ${name}:`,e);
+        console.error(`Erro ao ler aba ${actual}:`,e);
         return null;
       }
     };
@@ -761,8 +808,8 @@
     }
 
     function validateWorkbook(wb){
-      const missingRequired=REQUIRED_SHEETS.filter(s=>!wb.SheetNames.includes(s));
-      const missingOptional=OPTIONAL_SHEETS.filter(s=>!wb.SheetNames.includes(s));
+      const missingRequired=REQUIRED_SHEETS.filter(s=>!hasSheet(wb,s));
+      const missingOptional=OPTIONAL_SHEETS.filter(s=>!hasSheet(wb,s));
       if(missingRequired.length){
         throw new Error(`Abas obrigatórias não encontradas: ${missingRequired.join(', ')}`);
       }
@@ -1299,7 +1346,7 @@
     function resolveColumnType(metaSheet, column){
       if(column.exportType) return column.exportType;
       if(!metaSheet) return '';
-      const schema = schemas[metaSheet];
+      const schema = schemas[canonicalSheetName(metaSheet)];
       if(!schema) return '';
       const key = normalizeKey(column.key || column.label || '');
       const entry = schema.lookup[key];
@@ -1479,19 +1526,25 @@
       report += `<strong>Abas encontradas (${wb.SheetNames.length}):</strong><br>`;
 
       const expectedSheets = REQUIRED_SHEETS.concat(OPTIONAL_SHEETS);
+      const isExpectedSheet = (sheetName)=>{
+        const lower = String(sheetName).toLowerCase();
+        return expectedSheets.some(expected=> sheetCandidateNames(expected).some(candidate=>candidate.toLowerCase()===lower));
+      };
 
       expectedSheets.forEach(name => {
-        const exists = wb.SheetNames.includes(name);
+        const actual = findSheetName(wb, name);
+        const exists = !!actual;
         const icon = exists ? '✅' : '❌';
-        report += `${icon} ${name}`;
+        const label = actual && actual !== name ? `${name} → ${actual}` : name;
+        report += `${icon} ${label}`;
         if (exists) {
-          const data = tryGetSheet(wb, name);
+          const data = tryGetSheet(wb, actual);
           report += ` (${data ? data.length : 0} linhas)`;
         }
         report += '<br>';
       });
 
-      const outros = wb.SheetNames.filter(s => !expectedSheets.includes(s));
+      const outros = wb.SheetNames.filter(s => !isExpectedSheet(s));
       if(outros.length){
         report += '<br><strong>Outras abas:</strong><br>';
         outros.forEach(s => {
