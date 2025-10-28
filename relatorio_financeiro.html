@@ -199,7 +199,6 @@
       <div class="divider"></div>
       <div class="tag">Alfa (volume): <strong id="meta-alfa">—</strong></div>
       <div class="tag">Beta (ticket): <strong id="meta-beta">—</strong></div>
-      <div class="tag">Abatimento Advocacia em ADM: <strong id="meta-adv">—</strong></div>
       <div class="search-bar">
         <input type="search" id="global-search" placeholder="Buscar por regime, segmento ou cliente...">
       </div>
@@ -406,7 +405,12 @@
       Resumo_Retirada:{
         alfa_volume:['alfa_volume','alfa'],
         beta_ticket:['beta_ticket','beta'],
-        abatimento_rateio_advocacia_aplicado:['abatimento_rateio_advocacia_aplicado','abatimento_advocacia','abatimento_em_adm']
+        prolabores_incluidos_em_adm:[
+          'prolabores_incluidos_em_adm',
+          'prolabores_total',
+          'total_prolabores'
+        ],
+        observacao:['observacao','obs','observacoes']
       }
     };
 
@@ -829,10 +833,8 @@
       const resumo = (state.S?.rr||[])[0]||{};
       const alfa = resumo.alfa_volume ?? resumo.alfa ?? '';
       const beta = resumo.beta_ticket ?? resumo.beta ?? '';
-      const abatimento = asNum(resumo.abatimento_rateio_advocacia_aplicado ?? resumo.abatimento_advocacia);
       document.getElementById('meta-alfa').textContent = alfa || '–';
       document.getElementById('meta-beta').textContent = beta || '–';
-      document.getElementById('meta-adv').textContent = abatimento ? BRL.format(abatimento) : '–';
     }
     function renderResultadoRegime(){
       const regimesData = applySearch(state.datasets.resultadoRegimeComPeso||[]);
@@ -965,22 +967,22 @@
 
     function renderResumo(){
       const resumo = applySearch(state.datasets.resumoRetirada||[]);
-      const sampleKeys = Object.keys((resumo[0]||{}));
-      const columns = sampleKeys.map(k=>{
-        const label = k.replace(/_/g,' ');
-        const lower = k.toLowerCase();
-        let format;
-        if(/perc|percent|%/.test(lower)){
-          format=v=>PCT.format(asNum(v));
-        }else if(/receita|resultado|custo|valor|abatimento|retirada|prolabore|advocacia/.test(lower)){
-          format=v=>BRL.format(asNum(v));
-        }else if(/qtd|quantidade|clientes/.test(lower)){
-          format=v=>INT.format(asNum(v));
-        }
-        return {key:k,label,right:!!format,format};
-      });
-      tableFromData('tabResumoRetirada', columns, resumo);
-      statusBadge('Resumo_Retirada', (state.datasets.resumoRetirada||[]).length>0);
+
+      if(!resumo || !resumo.length){
+        document.getElementById('tabResumoRetirada').innerHTML =
+          '<div class="empty-message">Sem dados disponíveis.</div>';
+        statusBadge('Resumo_Retirada', false);
+        return;
+      }
+
+      tableFromData('tabResumoRetirada', [
+        {key:'alfa_volume',label:'Alfa (Volume)',right:true,format:v=>DEC.format(asNum(v))},
+        {key:'beta_ticket',label:'Beta (Ticket)',right:true,format:v=>DEC.format(asNum(v))},
+        {key:'prolabores_incluidos_em_adm',label:'Pró-labores em ADM',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'observacao',label:'Observações'}
+      ], resumo);
+
+      statusBadge('Resumo_Retirada', true);
     }
 
     function renderDRE(){
@@ -1079,32 +1081,6 @@
           title:'Segmento (Regime + Atividade) × Regime consolidado',
           diff:0,
           detail:divergencias.length?divergencias.join('\n'):'Sem divergências relevantes (≤1%)'
-        });
-      }
-
-      const resumo = (state.S?.rr||[])[0];
-      if(resumo){
-        const abatimento=asNum(resumo.abatimento_rateio_advocacia_aplicado ?? resumo.abatimento_advocacia);
-        const adm=state.datasets.topDespesasAdm||[];
-        const advocaciaItens=adm.filter(r=> String(r.item_nome||'').toLowerCase().includes('advocacia'));
-        const totalAdv=advocaciaItens.reduce((acc,r)=>acc+asNum(r.valor),0);
-        let status='warn';
-        let mensagem='Não há itens identificados como advocacia para confrontar.';
-        if(abatimento===0){
-          status='warn';
-          mensagem='Nenhum abatimento informado no resumo.';
-        }else if(Math.abs(totalAdv-abatimento)<=Math.abs(abatimento)*0.05){
-          status='ok';
-          mensagem=`Abatimento aplicado: ${BRL.format(abatimento)} | Itens advocacia: ${BRL.format(totalAdv)}`;
-        }else{
-          status='error';
-          mensagem=`Diferença entre abatimento (${BRL.format(abatimento)}) e itens advocacia (${BRL.format(totalAdv)}).`;
-        }
-        checks.push({
-          status,
-          title:'Abatimento da Advocacia em ADM',
-          diff: abatimento ? percentDiff(abatimento,totalAdv) : 0,
-          detail:mensagem
         });
       }
 
