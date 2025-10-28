@@ -13,8 +13,11 @@ Autor: Você + IA
 Data: 2025-10-26
 """
 
+import json
+import logging
 import re
 import unicodedata
+from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
@@ -25,36 +28,546 @@ import numpy as np
 import pandas as pd
 from rapidfuzz import fuzz
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+
 # ============================================================================
 # CONFIGURAÇÕES GLOBAIS
 # ============================================================================
 
-DIRETORIO_BASE = Path(r"C:\neto")
-ARQUIVO_ENTRADA = DIRETORIO_BASE / "tabela resultados.xlsx"
-ARQUIVO_SAIDA   = DIRETORIO_BASE / "analise_financeira_v3.xlsx"
-ARQUIVO_LOG     = DIRETORIO_BASE / "analise_log.txt"
-
-# Período acumulado (para cálculo das métricas mensais)
-MESES_ACUMULADOS = 10
-
-# Top N em rankings
-TOP_N_CLIENTES  = 10
-TOP_N_DESPESAS  = 10
-
-# Pesos de complexidade por regime (visão única por peso)
-PESOS_COMPLEXIDADE_REGIME: Dict[str, float] = {
-    "Simples Nacional": 1.0,
-    "Lucro Presumido": 1.2,
-    "Lucro Real": 1.6,
-    "PF": 0.0,
-    "Imune/Isenta": 1.2,
-    "Paralisada": 0.5,
-    "Não informado": 1.0,
+DEFAULT_CONFIG = {
+    "paths": {
+        "diretorio_base": r"C:\\neto",
+        "arquivo_entrada": "tabela resultados.xlsx",
+        "arquivo_saida": "analise_financeira_v3.xlsx",
+        "arquivo_log": "analise_log.txt",
+    },
+    "parametros": {
+        "meses_acumulados": 10,
+        "top_n_clientes": 10,
+        "top_n_despesas": 10,
+        "alfa_volume": 0.7,
+        "beta_ticket": 0.3,
+    },
+    "pesos_complexidade_regime": {
+        "Simples Nacional": 1.0,
+        "Lucro Presumido": 1.2,
+        "Lucro Real": 1.6,
+        "PF": 0.0,
+        "Imune/Isenta": 1.2,
+        "Paralisada": 0.5,
+        "Não informado": 1.0,
+    },
+    "margem_variaveis_tipos": ["TRABALHISTA", "TRIBUTÁRIA"],
 }
 
+
+class Configuracao:
+    def __init__(self, caminho: Path):
+        self.caminho = Path(caminho)
+        self.paths: Dict[str, str] = deepcopy(DEFAULT_CONFIG["paths"])
+        self.parametros: Dict[str, float] = deepcopy(DEFAULT_CONFIG["parametros"])
+        self.pesos_complexidade: Dict[str, float] = deepcopy(
+            DEFAULT_CONFIG["pesos_complexidade_regime"]
+        )
+        self.margem_variaveis_tipos: List[str] = list(
+            DEFAULT_CONFIG["margem_variaveis_tipos"]
+        )
+        self._carregar()
+
+    def _carregar(self) -> None:
+        if not self.caminho.exists():
+            logging.info("Arquivo de configuração '%s' não encontrado. Usando padrões.", self.caminho)
+            return
+
+        try:
+            conteudo = self.caminho.read_text(encoding="utf-8")
+        except OSError as exc:
+            logging.warning("Não foi possível ler '%s': %s", self.caminho, exc)
+            return
+
+        dados: Dict[str, object] = {}
+        try:
+            dados = json.loads(conteudo)
+        except json.JSONDecodeError as exc:
+            logging.warning("Configuração inválida em '%s': %s", self.caminho, exc)
+            return
+
+        self.paths.update({k: str(v) for k, v in dados.get("paths", {}).items()})
+        self.parametros.update({k: v for k, v in dados.get("parametros", {}).items()})
+        self.pesos_complexidade.update({
+            k: float(v) for k, v in dados.get("pesos_complexidade_regime", {}).items()
+        })
+        margem_cfg = dados.get("margem_variaveis_tipos")
+        if isinstance(margem_cfg, list) and margem_cfg:
+            self.margem_variaveis_tipos = [str(item).upper() for item in margem_cfg]
+
+
+CONFIG = Configuracao(Path("config.yaml"))
+
+DIRETORIO_BASE = Path(CONFIG.paths.get("diretorio_base", DEFAULT_CONFIG["paths"]["diretorio_base"]))
+ARQUIVO_ENTRADA = DIRETORIO_BASE / CONFIG.paths.get(
+    "arquivo_entrada", DEFAULT_CONFIG["paths"]["arquivo_entrada"]
+)
+ARQUIVO_SAIDA = DIRETORIO_BASE / CONFIG.paths.get(
+    "arquivo_saida", DEFAULT_CONFIG["paths"]["arquivo_saida"]
+)
+ARQUIVO_LOG = DIRETORIO_BASE / CONFIG.paths.get(
+    "arquivo_log", DEFAULT_CONFIG["paths"]["arquivo_log"]
+)
+
+# Período acumulado (para cálculo das métricas mensais)
+MESES_ACUMULADOS = int(CONFIG.parametros.get("meses_acumulados", 10))
+
+# Top N em rankings
+TOP_N_CLIENTES = int(CONFIG.parametros.get("top_n_clientes", 10))
+TOP_N_DESPESAS = int(CONFIG.parametros.get("top_n_despesas", 10))
+
+# Pesos de complexidade por regime (visão única por peso)
+PESOS_COMPLEXIDADE_REGIME: Dict[str, float] = dict(CONFIG.pesos_complexidade)
+
 # Hiperparâmetros do esforço
-ALFA_VOLUME = 0.7  # quanto o nº de empresas pesa (0.5~1.0 recomendado)
-BETA_TICKET = 0.3  # quanto o ticket médio relativo pesa (0.0~0.5 recomendado)
+ALFA_VOLUME = float(CONFIG.parametros.get("alfa_volume", 0.7))
+BETA_TICKET = float(CONFIG.parametros.get("beta_ticket", 0.3))
+
+MARGEM_VARIAVEIS_TIPOS: List[str] = list(CONFIG.margem_variaveis_tipos)
+
+TOL_OK = 0.0001   # 0,01%
+TOL_WARN = 0.001  # 0,1%
+
+# ============================================================================
+# INFRAESTRUTURA DE PROCESSAMENTO
+# ============================================================================
+
+
+class ProcessadorPlanilha:
+    def __init__(self, caminho: Path):
+        self.caminho = Path(caminho)
+        self._sheet_cache: Dict[Tuple[str, Tuple[Tuple[str, object], ...]], pd.DataFrame] = {}
+        self._sheets_info: Optional[Dict[str, Optional[str]]] = None
+
+    def ler_sheet(self, sheet_name: str, **kwargs) -> pd.DataFrame:
+        chave_kwargs = tuple(sorted(kwargs.items()))
+        cache_key = (sheet_name, chave_kwargs)
+        if cache_key not in self._sheet_cache:
+            logging.info("Lendo aba '%s' da planilha de origem", sheet_name)
+            df = pd.read_excel(self.caminho, sheet_name=sheet_name, **kwargs)
+            self._sheet_cache[cache_key] = df
+        return self._sheet_cache[cache_key].copy()
+
+    def detectar_abas(self, log: List[str]) -> Dict[str, Optional[str]]:
+        if self._sheets_info is not None:
+            return self._sheets_info
+
+        info: Dict[str, Optional[str]] = {
+            "modo": None,
+            "sheet_receitas": None,
+            "sheet_despesas": None,
+            "sheet_unica": None,
+            "erro": None,
+        }
+
+        try:
+            xls = pd.ExcelFile(self.caminho)
+        except Exception as exc:
+            info["erro"] = str(exc)
+            log.append(f"✗ ERRO ao abrir '{self.caminho}': {exc}")
+            self._sheets_info = info
+            return info
+
+        sheets = xls.sheet_names
+        log.append(f"✓ Abas encontradas: {sheets}")
+
+        def _fuzzy_find(keywords: List[str]) -> Tuple[Optional[str], float]:
+            melhor_nome = None
+            melhor_score = 0.0
+            for sheet in sheets:
+                sheet_norm = sheet.lower()
+                for alvo in keywords:
+                    score = fuzz.partial_ratio(sheet_norm, alvo)
+                    if score > melhor_score:
+                        melhor_score = score
+                        melhor_nome = sheet
+            return melhor_nome, melhor_score
+
+        sheet_rec, score_rec = _fuzzy_find(["receita", "receitas"])
+        sheet_desp, score_desp = _fuzzy_find(["despesa", "despesas"])
+
+        threshold = 70.0
+        if (
+            sheet_rec
+            and sheet_desp
+            and sheet_rec != sheet_desp
+            and score_rec >= threshold
+            and score_desp >= threshold
+        ):
+            info["modo"] = "duas_abas"
+            info["sheet_receitas"] = sheet_rec
+            info["sheet_despesas"] = sheet_desp
+            log.append(
+                f"→ Estratégia de leitura: abas dedicadas (Receitas='{sheet_rec}', Despesas='{sheet_desp}')"
+            )
+        else:
+            sheet_unica: Optional[str] = None
+            if len(sheets) == 1:
+                sheet_unica = sheets[0]
+            else:
+                for candidato in [sheet_rec, sheet_desp] + sheets:
+                    if candidato:
+                        sheet_unica = candidato
+                        break
+            if sheet_unica is None:
+                info["erro"] = "Nenhuma aba disponível para leitura."
+                log.append("✗ ERRO: Nenhuma aba encontrada no arquivo.")
+            else:
+                info["modo"] = "aba_unica"
+                info["sheet_unica"] = sheet_unica
+                if sheet_rec and sheet_desp and sheet_rec == sheet_desp:
+                    log.append(
+                        f"→ Estratégia de leitura: aba única '{sheet_unica}' (receitas+despesas na mesma guia)"
+                    )
+                else:
+                    log.append(
+                        f"→ Estratégia de leitura: aba única '{sheet_unica}' (layout combinado)"
+                    )
+
+        self._sheets_info = info
+        return info
+
+
+class FormatadorExcel:
+    def __init__(self, caminho_saida: Path):
+        self.caminho_saida = Path(caminho_saida)
+
+    @staticmethod
+    def _ajustar_nome_aba(nome: str, usados: set, log: Optional[List[str]] = None) -> str:
+        bruto = str(nome) if nome else "Sheet"
+        # Caracteres inválidos no Excel
+        bruto = re.sub(r"[:\\/?*\[\]]", "_", bruto)
+        bruto = bruto.strip() or "Sheet"
+
+        limite = 31
+        base = bruto[:limite]
+        candidato = base
+        contador = 1
+        while not candidato or candidato in usados:
+            sufixo = f"_{contador}"
+            corte = max(limite - len(sufixo), 1)
+            candidato = (base[:corte] + sufixo)[:limite]
+            contador += 1
+
+        if candidato != bruto and log is not None:
+            aviso = (
+                f"⚠ Nome de aba '{bruto}' ajustado para '{candidato}' (limite 31)."
+            )
+            log.append(aviso)
+            logging.info(aviso)
+
+        usados.add(candidato)
+        return candidato
+
+    @staticmethod
+    def _metadata_df(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return pd.DataFrame(columns=["campo", "tipo", "descricao"])
+        linhas = []
+        for coluna in df.columns:
+            linhas.append(
+                {
+                    "campo": coluna,
+                    "tipo": str(df[coluna].dtype),
+                    "descricao": "",
+                }
+            )
+        return pd.DataFrame(linhas, columns=["campo", "tipo", "descricao"])
+
+    def salvar(self, abas: List[Tuple[str, pd.DataFrame]], log: List[str]) -> None:
+        self.caminho_saida.parent.mkdir(parents=True, exist_ok=True)
+        nomes_usados: set = set()
+        with pd.ExcelWriter(self.caminho_saida, engine="xlsxwriter") as writer:
+            for nome, df in abas:
+                nome_ajustado = self._ajustar_nome_aba(nome, nomes_usados, log)
+                _safe_to_excel(df, writer, nome_ajustado)
+                meta = self._metadata_df(df)
+                meta_nome_base = f"_metadata_{nome_ajustado}"
+                meta_nome = self._ajustar_nome_aba(meta_nome_base, nomes_usados, log)
+                _safe_to_excel(meta, writer, meta_nome)
+            if log:
+                df_log = pd.DataFrame({"log": log})
+                nome_log = self._ajustar_nome_aba("Log", nomes_usados, log)
+                _safe_to_excel(df_log, writer, nome_log)
+                meta_log_nome = self._ajustar_nome_aba(
+                    f"_metadata_{nome_log}", nomes_usados, log
+                )
+                _safe_to_excel(self._metadata_df(df_log), writer, meta_log_nome)
+
+
+class CalculadoraFinanceira:
+    def __init__(self, meses_acumulados: int, margem_variaveis_tipos: List[str]):
+        self.meses_acumulados = max(int(meses_acumulados), 1)
+        self.margem_variaveis_tipos = [
+            normaliza_texto(tipo, remover_acentos=True, minuscula=True)
+            for tipo in margem_variaveis_tipos
+        ]
+
+    @staticmethod
+    def calcular_custos_liquidos(df: pd.DataFrame) -> Dict[str, float]:
+        if df is None or df.empty:
+            return {}
+
+        res: Dict[str, float] = {}
+        df_base = df.copy()
+        df_base['tipo_despesa'] = df_base.get('tipo_despesa', '').astype(str)
+        if 'is_conta_redutora' in df_base.columns:
+            serie_redutora = df_base['is_conta_redutora'].fillna(False).astype(bool)
+        else:
+            serie_redutora = pd.Series([False] * len(df_base), index=df_base.index)
+
+        tipos = ['ADMINISTRATIVA', 'TRABALHISTA', 'TRIBUTÁRIA', 'FINANCEIRA', 'BANCÁRIA']
+        for tipo in tipos:
+            chave = f'DESPESA {tipo}'
+            mask_tipo = df_base['tipo_despesa'] == chave
+            bruto = df_base.loc[mask_tipo & ~serie_redutora, 'valor'].sum()
+            redutora = df_base.loc[mask_tipo & serie_redutora, 'valor'].sum()
+            res[tipo] = float(bruto) - abs(float(redutora))
+        return res
+
+    def _percentual_receita(self, valor: float, receita_total: float) -> float:
+        return (valor / receita_total) if receita_total else 0.0
+
+    def _percentual_resultado(self, valor: float, resultado_operacional: float) -> Optional[float]:
+        if resultado_operacional == 0:
+            return None
+        return valor / resultado_operacional
+
+    def gerar_dre(
+        self,
+        receita_honorarios: float,
+        receita_certificados: float,
+        receita_financeira: float,
+        df_despesas_operacionais: pd.DataFrame,
+    ) -> pd.DataFrame:
+        receita_honorarios = float(receita_honorarios or 0.0)
+        receita_certificados = float(receita_certificados or 0.0)
+        receita_financeira = float(receita_financeira or 0.0)
+
+        receita_operacional_bruta = receita_honorarios + receita_certificados
+        receita_total = receita_operacional_bruta + receita_financeira
+
+        despesas_liquidas = self.calcular_custos_liquidos(df_despesas_operacionais)
+        despesas_adm = float(despesas_liquidas.get('ADMINISTRATIVA', 0.0))
+        despesas_trab = float(despesas_liquidas.get('TRABALHISTA', 0.0))
+        despesas_trib = float(despesas_liquidas.get('TRIBUTÁRIA', 0.0))
+        despesas_fin = float(despesas_liquidas.get('FINANCEIRA', 0.0))
+        despesas_banc = float(despesas_liquidas.get('BANCÁRIA', 0.0))
+
+        total_despesas_operacionais = (
+            despesas_adm + despesas_trab + despesas_trib + despesas_fin + despesas_banc
+        )
+        resultado_operacional = receita_total - total_despesas_operacionais
+        resultado_liquido = resultado_operacional
+
+        despesas_adm_bruta = despesas_adm
+        despesas_adm_redutora = 0.0
+        prolabores_total = 0.0
+        detalhes_prolabore: List[str] = []
+
+        if df_despesas_operacionais is not None and not df_despesas_operacionais.empty:
+            df_base = df_despesas_operacionais.copy()
+            df_base['tipo_despesa'] = df_base.get('tipo_despesa', '').astype(str)
+
+            serie_redutora = df_base.get('is_conta_redutora')
+            if serie_redutora is None:
+                serie_redutora = pd.Series([False] * len(df_base), index=df_base.index)
+            serie_redutora = serie_redutora.fillna(False).astype(bool)
+
+            mask_admin = df_base['tipo_despesa'] == 'DESPESA ADMINISTRATIVA'
+            despesas_adm_bruta = float(df_base.loc[mask_admin & ~serie_redutora, 'valor'].sum())
+            despesas_adm_redutora = abs(float(df_base.loc[mask_admin & serie_redutora, 'valor'].sum()))
+
+            serie_prolabore = df_base.get('is_prolabore')
+            if serie_prolabore is None:
+                serie_prolabore = pd.Series([False] * len(df_base), index=df_base.index)
+            serie_prolabore = serie_prolabore.fillna(False).astype(bool)
+
+            if serie_prolabore.any():
+                df_prolab = df_base.loc[serie_prolabore].copy()
+                prolabores_total = float(df_prolab['valor'].sum())
+                for _, linha in df_prolab.iterrows():
+                    nome = str(linha.get('item_nome', '')).strip()
+                    valor = float(linha.get('valor', 0.0))
+                    if nome:
+                        detalhes_prolabore.append(f"• {nome.upper()}  R$ {valor:,.2f}")
+
+        observacao_admin_partes: List[str] = []
+        if prolabores_total:
+            observacao_admin_partes.append(f"Inclui pró-labores: R$ {prolabores_total:,.2f}")
+        if despesas_adm_redutora:
+            observacao_admin_partes.append(f"Base bruta: R$ {despesas_adm_bruta:,.2f}")
+        observacao_admin = " | ".join(observacao_admin_partes)
+
+        linhas: List[Dict[str, object]] = []
+
+        def adicionar_linha(
+            bloco: str,
+            descricao: str,
+            valor: float,
+            *,
+            incluir_resultado: bool = False,
+            observacao: str = "",
+        ) -> None:
+            percentual_receita = self._percentual_receita(valor, receita_total)
+            percentual_resultado = (
+                self._percentual_resultado(valor, resultado_operacional)
+                if incluir_resultado
+                else None
+            )
+            linhas.append(
+                {
+                    'bloco': bloco,
+                    'linha': descricao,
+                    'valor_total': valor,
+                    'valor_mensal': valor / self.meses_acumulados,
+                    'percentual_receita_total': percentual_receita,
+                    'percentual_resultado_operacional': percentual_resultado,
+                    'observacao': observacao,
+                }
+            )
+
+        adicionar_linha(
+            '1. RECEITA BRUTA',
+            'Receita com Honorários Contábeis',
+            receita_honorarios,
+            incluir_resultado=True,
+        )
+        adicionar_linha(
+            '1. RECEITA BRUTA',
+            'Receita com Certificados Digitais',
+            receita_certificados,
+            incluir_resultado=True,
+        )
+        adicionar_linha(
+            '1. RECEITA BRUTA',
+            '(=) RECEITA OPERACIONAL BRUTA',
+            receita_operacional_bruta,
+            incluir_resultado=True,
+        )
+        adicionar_linha(
+            '2. RECEITAS FINANCEIRAS',
+            'Juros, Rendimentos e Receitas Financeiras',
+            receita_financeira,
+            incluir_resultado=True,
+        )
+        adicionar_linha(
+            '2. RECEITAS FINANCEIRAS',
+            '(=) RECEITA TOTAL',
+            receita_total,
+            incluir_resultado=True,
+        )
+
+        adicionar_linha(
+            '3. DESPESAS OPERACIONAIS',
+            '(-) Despesas Administrativas',
+            -despesas_adm,
+            observacao=observacao_admin,
+        )
+        adicionar_linha(
+            '3. DESPESAS OPERACIONAIS',
+            '(-) Despesas Trabalhistas Rateadas',
+            -despesas_trab,
+        )
+        adicionar_linha(
+            '3. DESPESAS OPERACIONAIS',
+            '(-) Despesas Tributárias',
+            -despesas_trib,
+        )
+        adicionar_linha(
+            '3. DESPESAS OPERACIONAIS',
+            '(-) Despesas Financeiras',
+            -despesas_fin,
+        )
+        adicionar_linha(
+            '3. DESPESAS OPERACIONAIS',
+            '(-) Despesas Bancárias',
+            -despesas_banc,
+        )
+        adicionar_linha(
+            '3. DESPESAS OPERACIONAIS',
+            '(=) RESULTADO OPERACIONAL',
+            resultado_operacional,
+            incluir_resultado=True,
+        )
+        adicionar_linha(
+            '4. RESULTADO FINAL',
+            '(=) RESULTADO OPERACIONAL / LÍQUIDO',
+            resultado_liquido,
+            incluir_resultado=True,
+        )
+
+        if prolabores_total:
+            adicionar_linha(
+                'DISTRIBUIÇÃO INTERNA',
+                'Pró-labores dos Sócios (já incluídos em ADM)',
+                prolabores_total,
+                observacao="\n".join(detalhes_prolabore),
+            )
+
+        df_dre = pd.DataFrame(linhas)
+        colunas = [
+            'bloco',
+            'linha',
+            'valor_total',
+            'valor_mensal',
+            'percentual_receita_total',
+            'percentual_resultado_operacional',
+            'observacao',
+        ]
+        return df_dre[colunas]
+
+    def calcular_margem_contribuicao(
+        self,
+        receita_total: float,
+        df_despesas: pd.DataFrame,
+        clientes_total: int,
+    ) -> pd.DataFrame:
+        receita_total = float(receita_total or 0.0)
+        clientes_total = int(clientes_total or 0)
+
+        if df_despesas is None or df_despesas.empty:
+            variaveis = 0.0
+        else:
+            df_temp = df_despesas.copy()
+            coluna_tipo = None
+            for candidato in ['tipo', 'tipo_despesa', 'grupo']:
+                if candidato in df_temp.columns:
+                    coluna_tipo = candidato
+                    break
+            if coluna_tipo is None:
+                variaveis = 0.0
+            else:
+                tipo_norm = df_temp[coluna_tipo].apply(
+                    lambda x: normaliza_texto(str(x), remover_acentos=True, minuscula=True)
+                )
+                mask_variavel = tipo_norm.apply(
+                    lambda valor: any(tipo in valor for tipo in self.margem_variaveis_tipos)
+                )
+                variaveis = float(df_temp.loc[mask_variavel, 'valor'].sum())
+
+        margem_total = receita_total + variaveis
+        margem_mensal = margem_total / self.meses_acumulados
+        divisor = clientes_total if clientes_total else 1
+        margem_por_cliente = margem_mensal / divisor
+
+        return pd.DataFrame([
+            {
+                'margem_total': margem_total,
+                'margem_mensal': margem_mensal,
+                'clientes_total': max(clientes_total, 0),
+                'margem_por_cliente': margem_por_cliente,
+            }
+        ])
 
 # Departamentos e colaboradores (para fuzzy match)
 COLABORADORES_DEPARTAMENTO = {
@@ -272,10 +785,6 @@ def _prepare_segmento_excel(df: pd.DataFrame) -> pd.DataFrame:
     base['atividade'] = base['atividade'].fillna('')
     return base
 
-# Cache para reuso de parsing
-_SHEETS_INFO_CACHE: Optional[Dict[str, Optional[str]]] = None
-_PLANILHA_UNICA_CACHE: Optional[Dict[str, pd.DataFrame]] = None
-
 # ============================================================================
 # SANITIZAÇÃO PARA EXCEL (evita fórmulas removidas)
 # ============================================================================
@@ -437,230 +946,19 @@ def classifica_departamento_fuzzy(colaborador: str) -> Tuple[str, int]:
 # CARREGAMENTO DOS DADOS
 # ============================================================================
 
-def _detectar_abas_excel(caminho: Path, log: List[str]) -> Dict[str, Optional[str]]:
-    """Determina se o arquivo possui abas separadas ou layout combinado."""
-    global _SHEETS_INFO_CACHE
-    if _SHEETS_INFO_CACHE is not None:
-        return _SHEETS_INFO_CACHE
-
-    info: Dict[str, Optional[str]] = {
-        'modo': None,
-        'sheet_receitas': None,
-        'sheet_despesas': None,
-        'sheet_unica': None,
-        'erro': None,
-    }
-
-    try:
-        xls = pd.ExcelFile(caminho)
-    except Exception as e:
-        info['erro'] = str(e)
-        log.append(f"✗ ERRO ao abrir '{caminho}': {e}")
-        _SHEETS_INFO_CACHE = info
-        return info
-
-    sheets = xls.sheet_names
-    log.append(f"✓ Abas encontradas: {sheets}")
-
-    def _fuzzy_find(keywords: List[str]) -> Tuple[Optional[str], float]:
-        melhor_nome = None
-        melhor_score = 0.0
-        for sheet in sheets:
-            sheet_norm = sheet.lower()
-            for alvo in keywords:
-                score = fuzz.partial_ratio(sheet_norm, alvo)
-                if score > melhor_score:
-                    melhor_score = score
-                    melhor_nome = sheet
-        return melhor_nome, melhor_score
-
-    sheet_rec, score_rec = _fuzzy_find(["receita", "receitas"])
-    sheet_desp, score_desp = _fuzzy_find(["despesa", "despesas"])
-
-    threshold = 70.0
-    if (
-        sheet_rec
-        and sheet_desp
-        and sheet_rec != sheet_desp
-        and score_rec >= threshold
-        and score_desp >= threshold
-    ):
-        info['modo'] = 'duas_abas'
-        info['sheet_receitas'] = sheet_rec
-        info['sheet_despesas'] = sheet_desp
-        log.append(
-            f"→ Estratégia de leitura: abas dedicadas (Receitas='{sheet_rec}', Despesas='{sheet_desp}')"
-        )
-    else:
-        # fallback para aba única combinada
-        sheet_unica: Optional[str] = None
-        if len(sheets) == 1:
-            sheet_unica = sheets[0]
-        else:
-            for candidato in [sheet_rec, sheet_desp] + sheets:
-                if candidato:
-                    sheet_unica = candidato
-                    break
-        if sheet_unica is None:
-            info['erro'] = 'Nenhuma aba disponível para leitura.'
-            log.append("✗ ERRO: Nenhuma aba encontrada no arquivo.")
-        else:
-            info['modo'] = 'aba_unica'
-            info['sheet_unica'] = sheet_unica
-            if sheet_rec and sheet_desp and sheet_rec == sheet_desp:
-                log.append(
-                    f"→ Estratégia de leitura: aba única '{sheet_unica}' (receitas+despesas na mesma guia)"
-                )
-            else:
-                log.append(
-                    f"→ Estratégia de leitura: aba única '{sheet_unica}' (layout combinado)"
-                )
-
-    _SHEETS_INFO_CACHE = info
-    return info
-
-
 def _coluna_por_indice(df: pd.DataFrame, indice: int) -> Optional[str]:
     if indice < len(df.columns):
         return df.columns[indice]
     return None
 
-
-def _parse_planilha_unica(
-    caminho: Path,
-    sheet_name: str,
-    log: List[str]
-) -> Dict[str, pd.DataFrame]:
-    """Parser específico para o layout combinado (Planilha única)."""
-    global _PLANILHA_UNICA_CACHE
-    if _PLANILHA_UNICA_CACHE is not None:
-        return _PLANILHA_UNICA_CACHE
-
-    try:
-        df_raw = pd.read_excel(caminho, sheet_name=sheet_name, header=0)
-    except Exception as e:
-        log.append(f"✗ ERRO ao ler aba única '{sheet_name}': {e}")
-        _PLANILHA_UNICA_CACHE = {
-            'df_receitas': pd.DataFrame(),
-            'df_despesas': pd.DataFrame(),
-            'valor_rateio_adv': 0.0,
-            'linhas_receitas_lidas': 0,
-            'linhas_despesas_lidas': 0,
-            'erro': str(e),
-        }
-        return _PLANILHA_UNICA_CACHE
-
-    # ---------------- RECEITAS ----------------
-    col_cliente = _coluna_por_indice(df_raw, 0)
-    col_regime = _coluna_por_indice(df_raw, 1)
-    col_receita = _coluna_por_indice(df_raw, 2)
-
-    df_receitas_raw = df_raw[[c for c in [col_cliente, col_regime, col_receita] if c is not None]].copy()
-    df_receitas_raw.columns = ['cliente', 'regime_original', 'receita'][: len(df_receitas_raw.columns)]
-    df_receitas_raw = df_receitas_raw.dropna(how='all')
-
-    df_receitas_norm = pd.DataFrame()
-    if not df_receitas_raw.empty and {'cliente', 'regime_original', 'receita'}.issubset(df_receitas_raw.columns):
-        df_receitas_norm['cliente'] = df_receitas_raw['cliente'].apply(
-            lambda x: str(x).strip() if pd.notna(x) else ""
-        )
-        df_receitas_norm['regime_original'] = df_receitas_raw['regime_original'].apply(
-            lambda x: str(x).strip() if pd.notna(x) else ""
-        )
-        df_receitas_norm['receita'] = df_receitas_raw['receita'].apply(converte_para_numero)
-        df_receitas_norm['empresa_padronizada'] = df_receitas_norm['cliente'].apply(
-            lambda x: normaliza_texto(x, remover_acentos=True, minuscula=False).upper()
-        )
-        df_receitas_norm[['regime_base', 'segmento']] = df_receitas_norm['regime_original'].apply(
-            lambda x: pd.Series(parse_regime_e_segmento(x))
-        )
-        df_receitas_norm['tipo_receita'] = df_receitas_norm['cliente'].apply(classifica_tipo_receita)
-        df_receitas_norm['is_rateio_adv'] = df_receitas_norm['cliente'].apply(is_rateio_advocacia)
-    else:
-        df_receitas_norm = pd.DataFrame(columns=[
-            'cliente', 'regime_original', 'receita', 'empresa_padronizada',
-            'regime_base', 'segmento', 'tipo_receita', 'is_rateio_adv'
-        ])
-
-    valor_rateio_adv = df_receitas_norm.loc[df_receitas_norm['is_rateio_adv'], 'receita'].sum()
-    df_receitas_norm = df_receitas_norm[~df_receitas_norm['is_rateio_adv']].copy()
-    df_receitas_norm = df_receitas_norm[df_receitas_norm['cliente'] != ""].copy()
-
-    # ---------------- DESPESAS ----------------
-    def _col_por_nome_ou_indice(prefixo: str, fallback_indice: int) -> Optional[str]:
-        for col in df_raw.columns:
-            if isinstance(col, str) and col.strip().lower().startswith(prefixo):
-                return col
-        return _coluna_por_indice(df_raw, fallback_indice)
-
-    col_adm_item = _col_por_nome_ou_indice('unnamed: 6', 6)
-    col_adm_valor = _col_por_nome_ou_indice('unnamed: 7', 7)
-    col_trab_item = _col_por_nome_ou_indice('unnamed: 9', 9)
-    col_trab_valor = _col_por_nome_ou_indice('unnamed: 10', 10)
-
-    registros: List[pd.DataFrame] = []
-
-    def _monta_bloco(col_item: Optional[str], col_valor: Optional[str], grupo: str) -> pd.DataFrame:
-        if col_item is None or col_valor is None:
-            return pd.DataFrame(columns=['grupo', 'item_nome', 'valor', 'id_linha'])
-        bloco = df_raw[[col_item, col_valor]].copy()
-        bloco.columns = ['item_nome', 'valor']
-        bloco['item_nome_raw'] = bloco['item_nome']
-        bloco['valor_raw'] = bloco['valor']
-        bloco['item_nome'] = bloco['item_nome'].apply(
-            lambda x: str(x).strip() if pd.notna(x) else ""
-        )
-        bloco['valor'] = bloco['valor'].apply(converte_para_numero)
-        labels_excluir = {'VALOR', 'DESPESAS ADMINISTRATIVAS', 'DESPESAS TRABALHISTAS', 'TOTAL'}
-        bloco = bloco[~bloco['item_nome'].str.upper().isin(labels_excluir)]
-        bloco = bloco[~bloco['valor_raw'].apply(
-            lambda x: str(x).strip().upper() if pd.notna(x) else ""
-        ).isin(labels_excluir)]
-        bloco = bloco[~((bloco['item_nome'] == "") & (bloco['valor'] == 0.0))]
-        bloco['grupo'] = grupo
-        bloco['id_linha'] = bloco.index + 2  # aproximado ao nº de linha no Excel
-        return bloco[['grupo', 'item_nome', 'valor', 'id_linha']]
-
-    registros.append(_monta_bloco(col_adm_item, col_adm_valor, 'DESPESAS ADMINISTRATIVAS'))
-    registros.append(_monta_bloco(col_trab_item, col_trab_valor, 'DESPESAS TRABALHISTAS'))
-
-    df_despesas_norm = pd.concat(registros, ignore_index=True) if registros else pd.DataFrame()
-    if df_despesas_norm.empty:
-        df_despesas_norm = pd.DataFrame(columns=['grupo', 'item_nome', 'valor', 'id_linha'])
-
-    df_despesas_norm['tipo_trabalhista'] = ""
-    df_despesas_norm['colaborador'] = ""
-    df_despesas_norm['departamento_classificado'] = ""
-    df_despesas_norm['fuzzy_score'] = 0.0
-
-    mask_trab = df_despesas_norm['grupo'] == 'DESPESAS TRABALHISTAS'
-    if mask_trab.any():
-        df_despesas_norm.loc[mask_trab, 'tipo_trabalhista'] = df_despesas_norm.loc[mask_trab, 'item_nome'].apply(classifica_tipo_trabalhista)
-        df_despesas_norm.loc[mask_trab, 'colaborador'] = df_despesas_norm.loc[mask_trab, 'item_nome'].apply(extrai_colaborador)
-        classificacoes = df_despesas_norm.loc[mask_trab, 'colaborador'].apply(
-            lambda x: classifica_departamento_fuzzy(x) if x else ("SEM MATCH", 0)
-        )
-        df_despesas_norm.loc[mask_trab, 'departamento_classificado'] = [c[0] for c in classificacoes]
-        df_despesas_norm.loc[mask_trab, 'fuzzy_score'] = np.array([c[1] for c in classificacoes], dtype=float)
-
-    _PLANILHA_UNICA_CACHE = {
-        'df_receitas': df_receitas_norm,
-        'df_despesas': df_despesas_norm,
-        'valor_rateio_adv': float(valor_rateio_adv),
-        'linhas_receitas_lidas': int(len(df_receitas_raw)),
-        'linhas_despesas_lidas': int(len(df_despesas_norm)),
-        'erro': None,
-    }
-    return _PLANILHA_UNICA_CACHE
-
-def carrega_receitas_v2(caminho: Path, log: List[str]) -> pd.DataFrame:
+def carrega_receitas_v2(processador: ProcessadorPlanilha, log: List[str]) -> pd.DataFrame:
     log.append("\n" + "-" * 80)
     log.append("PROCESSANDO RECEITAS (v2)")
     log.append("-" * 80)
 
     sheet_receitas = 'RECEITAS'
     try:
-        df_raw = pd.read_excel(caminho, sheet_name=sheet_receitas)
+        df_raw = processador.ler_sheet(sheet_receitas)
         log.append(f"✓ Linhas lidas ({sheet_receitas}): {len(df_raw)}")
     except Exception as exc:
         log.append(f"✗ ERRO ao ler RECEITAS ('{sheet_receitas}'): {exc}")
@@ -750,14 +1048,14 @@ def separa_receitas_por_classificacao(df_receitas: pd.DataFrame) -> Dict[str, pd
     return resultado
 
 
-def carrega_despesas_v2(caminho: Path, log: List[str]) -> pd.DataFrame:
+def carrega_despesas_v2(processador: ProcessadorPlanilha, log: List[str]) -> pd.DataFrame:
     log.append("\n" + "-" * 80)
     log.append("PROCESSANDO DESPESAS (v2)")
     log.append("-" * 80)
 
     sheet_despesas = 'DESPESAS'
     try:
-        df_raw = pd.read_excel(caminho, sheet_name=sheet_despesas, header=None)
+        df_raw = processador.ler_sheet(sheet_despesas, header=None)
         log.append(f"✓ Linhas lidas ({sheet_despesas}): {len(df_raw)}")
     except Exception as exc:
         log.append(f"✗ ERRO ao ler DESPESAS ('{sheet_despesas}'): {exc}")
@@ -1948,257 +2246,6 @@ def custo_absorcao_por_peso(
     reg, seg = _aplica_visao_com_peso(df_core, df_despesas_rateado, meses, pesos_regime=pesos_regime)
     return reg, seg
 
-def gerar_dre(
-    receita_honorarios: float,
-    receita_certificados: float,
-    receita_financeira: float,
-    df_despesas_operacionais: pd.DataFrame
-) -> pd.DataFrame:
-    """Gera a DRE simplificada com pró-labores integrados às despesas administrativas."""
-
-    receita_honorarios = float(receita_honorarios or 0.0)
-    receita_certificados = float(receita_certificados or 0.0)
-    receita_financeira = float(receita_financeira or 0.0)
-
-    receita_operacional_bruta = receita_honorarios + receita_certificados
-    receita_total = receita_operacional_bruta + receita_financeira
-
-    if df_despesas_operacionais.empty:
-        grupos = {}
-        despesas_adm_bruta = 0.0
-        despesas_adm_redutora = 0.0
-    else:
-        grupos = df_despesas_operacionais.groupby('tipo_despesa')['valor'].sum()
-
-        mask_admin = df_despesas_operacionais['tipo_despesa'] == 'DESPESA ADMINISTRATIVA'
-        if 'is_conta_redutora' in df_despesas_operacionais.columns:
-            serie_redutora = df_despesas_operacionais['is_conta_redutora'].fillna(False)
-        else:
-            serie_itens = df_despesas_operacionais.get(
-                'item_nome',
-                pd.Series('', index=df_despesas_operacionais.index),
-            )
-            serie_redutora = serie_itens.astype(str).str.contains('REDUTORA', case=False, na=False)
-        mask_redutora = mask_admin & serie_redutora
-
-        despesas_adm_redutora = abs(df_despesas_operacionais.loc[mask_redutora, 'valor'].sum())
-        despesas_adm_bruta = float(
-            df_despesas_operacionais.loc[mask_admin & ~mask_redutora, 'valor'].sum()
-        )
-
-    despesas_adm = float(despesas_adm_bruta - despesas_adm_redutora)
-    despesas_trab = float(grupos.get('DESPESA TRABALHISTA', 0.0))
-    despesas_trib = float(grupos.get('DESPESA TRIBUTÁRIA', 0.0))
-    despesas_fin = float(grupos.get('DESPESA FINANCEIRA', 0.0))
-    despesas_banc = float(grupos.get('DESPESA BANCÁRIA', 0.0))
-
-    total_despesas_operacionais = despesas_adm + despesas_trab + despesas_trib + despesas_fin + despesas_banc
-    resultado_operacional = receita_operacional_bruta - total_despesas_operacionais
-    resultado_liquido = resultado_operacional
-
-    prolabores_total = 0.0
-    detalhes_prolabore: List[str] = []
-    if not df_despesas_operacionais.empty:
-        if 'is_prolabore' in df_despesas_operacionais.columns:
-            mask_prolab = df_despesas_operacionais['is_prolabore'].fillna(False)
-        else:
-            mask_prolab = pd.Series([False] * len(df_despesas_operacionais), index=df_despesas_operacionais.index)
-
-        if mask_prolab.any():
-            df_prolab = df_despesas_operacionais.loc[mask_prolab].copy()
-            prolabores_total = float(df_prolab['valor'].sum())
-            for _, row in df_prolab.iterrows():
-                nome = str(row.get('item_nome', '')).strip()
-                valor = float(row.get('valor', 0.0))
-                if nome:
-                    detalhes_prolabore.append(f"• {nome.upper()}  R$ {valor:,.2f}")
-
-    def perc_receita(valor: float) -> float:
-        return (valor / receita_total * 100.0) if receita_total else 0.0
-
-    def perc_resultado(valor: float) -> float:
-        return (valor / resultado_operacional * 100.0) if resultado_operacional else 0.0
-
-    linhas: List[Dict[str, object]] = []
-
-    linhas.append({
-        'bloco': '1. RECEITA BRUTA',
-        'descricao': 'Receita com Honorários Contábeis',
-        'valor': receita_honorarios,
-        'percentual_receita_total': perc_receita(receita_honorarios),
-        'percentual_resultado_operacional': perc_resultado(receita_honorarios),
-        'observacao': ''
-    })
-    linhas.append({
-        'bloco': '1. RECEITA BRUTA',
-        'descricao': 'Receita com Certificados Digitais',
-        'valor': receita_certificados,
-        'percentual_receita_total': perc_receita(receita_certificados),
-        'percentual_resultado_operacional': perc_resultado(receita_certificados),
-        'observacao': ''
-    })
-    linhas.append({
-        'bloco': '1. RECEITA BRUTA',
-        'descricao': '(=) RECEITA OPERACIONAL BRUTA',
-        'valor': receita_operacional_bruta,
-        'percentual_receita_total': perc_receita(receita_operacional_bruta),
-        'percentual_resultado_operacional': perc_resultado(receita_operacional_bruta),
-        'observacao': ''
-    })
-
-    linhas.append({
-        'bloco': '2. RECEITAS FINANCEIRAS',
-        'descricao': 'Juros, Rendimentos e Receitas Financeiras',
-        'valor': receita_financeira,
-        'percentual_receita_total': perc_receita(receita_financeira),
-        'percentual_resultado_operacional': perc_resultado(receita_financeira),
-        'observacao': ''
-    })
-    linhas.append({
-        'bloco': '2. RECEITAS FINANCEIRAS',
-        'descricao': '(=) RECEITA TOTAL',
-        'valor': receita_total,
-        'percentual_receita_total': perc_receita(receita_total),
-        'percentual_resultado_operacional': perc_resultado(receita_total),
-        'observacao': ''
-    })
-
-    observacao_admin_partes: List[str] = []
-    if prolabores_total:
-        observacao_admin_partes.append(f"Inclui pró-labores: R$ {prolabores_total:,.2f}")
-    if despesas_adm_redutora:
-        observacao_admin_partes.append(f"Base bruta: R$ {despesas_adm_bruta:,.2f}")
-    observacao_admin = " | ".join(observacao_admin_partes)
-
-    linhas.append({
-        'bloco': '3. DESPESAS OPERACIONAIS',
-        'descricao': '(-) Despesas Administrativas',
-        'valor': -despesas_adm,
-        'percentual_receita_total': -perc_receita(despesas_adm),
-        'percentual_resultado_operacional': perc_resultado(-despesas_adm),
-        'observacao': observacao_admin,
-    })
-
-    if despesas_adm_redutora:
-        linhas.append({
-            'bloco': '3. DESPESAS OPERACIONAIS',
-            'descricao': '(-) (-) REDUTORA DE ADMINISTRATIVA',
-            'valor': despesas_adm_redutora,
-            'percentual_receita_total': perc_receita(despesas_adm_redutora),
-            'percentual_resultado_operacional': perc_resultado(despesas_adm_redutora),
-            'observacao': 'Conta redutora das despesas administrativas (já considerada no total acima).'
-        })
-
-    linhas.extend([
-        {
-            'bloco': '3. DESPESAS OPERACIONAIS',
-            'descricao': '(-) Despesas Trabalhistas Rateadas',
-            'valor': -despesas_trab,
-            'percentual_receita_total': -perc_receita(despesas_trab),
-            'percentual_resultado_operacional': perc_resultado(-despesas_trab),
-            'observacao': ''
-        },
-        {
-            'bloco': '3. DESPESAS OPERACIONAIS',
-            'descricao': '(-) Despesas Tributárias',
-            'valor': -despesas_trib,
-            'percentual_receita_total': -perc_receita(despesas_trib),
-            'percentual_resultado_operacional': perc_resultado(-despesas_trib),
-            'observacao': ''
-        },
-        {
-            'bloco': '3. DESPESAS OPERACIONAIS',
-            'descricao': '(-) Despesas Financeiras',
-            'valor': -despesas_fin,
-            'percentual_receita_total': -perc_receita(despesas_fin),
-            'percentual_resultado_operacional': perc_resultado(-despesas_fin),
-            'observacao': ''
-        },
-        {
-            'bloco': '3. DESPESAS OPERACIONAIS',
-            'descricao': '(-) Despesas Bancárias',
-            'valor': -despesas_banc,
-            'percentual_receita_total': -perc_receita(despesas_banc),
-            'percentual_resultado_operacional': perc_resultado(-despesas_banc),
-            'observacao': ''
-        },
-        {
-            'bloco': '3. DESPESAS OPERACIONAIS',
-            'descricao': '(=) RESULTADO OPERACIONAL',
-            'valor': resultado_operacional,
-            'percentual_receita_total': perc_receita(resultado_operacional),
-            'percentual_resultado_operacional': 100.0,
-            'observacao': ''
-        },
-    ])
-
-    linhas.append({
-        'bloco': '4. RESULTADO FINAL',
-        'descricao': '(=) RESULTADO OPERACIONAL / LÍQUIDO',
-        'valor': resultado_liquido,
-        'percentual_receita_total': perc_receita(resultado_liquido),
-        'percentual_resultado_operacional': perc_resultado(resultado_liquido),
-        'observacao': ''
-    })
-
-    linhas.append({
-        'bloco': 'DISTRIBUIÇÃO INTERNA',
-        'descricao': 'Pró-labores dos Sócios (já incluídos em ADM)',
-        'valor': prolabores_total,
-        'percentual_receita_total': perc_receita(prolabores_total),
-        'percentual_resultado_operacional': perc_resultado(prolabores_total),
-        'observacao': "\n".join(detalhes_prolabore)
-    })
-
-    margem_operacional = perc_receita(resultado_operacional)
-    perc_prolab_receita = perc_receita(prolabores_total)
-    perc_prolab_resultado = perc_resultado(prolabores_total)
-
-    linhas.extend([
-        {
-            'bloco': 'INDICADORES',
-            'descricao': 'Margem Operacional (%)',
-            'valor': margem_operacional,
-            'percentual_receita_total': margem_operacional,
-            'percentual_resultado_operacional': margem_operacional,
-            'observacao': ''
-        },
-        {
-            'bloco': 'INDICADORES',
-            'descricao': '% Pró-labores sobre Receita Total',
-            'valor': perc_prolab_receita,
-            'percentual_receita_total': perc_prolab_receita,
-            'percentual_resultado_operacional': perc_prolab_receita,
-            'observacao': ''
-        },
-        {
-            'bloco': 'INDICADORES',
-            'descricao': '% Pró-labores sobre Resultado Operacional',
-            'valor': perc_prolab_resultado,
-            'percentual_receita_total': perc_prolab_resultado,
-            'percentual_resultado_operacional': perc_prolab_resultado,
-            'observacao': ''
-        },
-    ])
-
-    df_dre = pd.DataFrame(linhas)
-    df_dre = df_dre.rename(columns={
-        'descricao': 'linha',
-        'valor': 'valor_total',
-        'percentual_receita_total': 'perc_receita',
-        'percentual_resultado_operacional': 'perc_resultado_liquido',
-    })
-
-    return df_dre[[
-        'bloco',
-        'linha',
-        'valor_total',
-        'perc_receita',
-        'perc_resultado_liquido',
-        'observacao',
-    ]]
-
-
 def gera_resumo_retirada_simplificado(
     df_despesas_operacionais: pd.DataFrame,
     alfa: float = ALFA_VOLUME,
@@ -2230,13 +2277,11 @@ def gera_resumo_retirada_simplificado(
 def gera_relatorio_completo():
     log: List[str] = []
     try:
-        global _SHEETS_INFO_CACHE, _PLANILHA_UNICA_CACHE
-        _SHEETS_INFO_CACHE = None
-        _PLANILHA_UNICA_CACHE = None
-
+        processador = ProcessadorPlanilha(ARQUIVO_ENTRADA)
+        calculadora = CalculadoraFinanceira(MESES_ACUMULADOS, MARGEM_VARIAVEIS_TIPOS)
         DIRETORIO_BASE.mkdir(parents=True, exist_ok=True)
 
-        df_receitas = carrega_receitas_v2(ARQUIVO_ENTRADA, log)
+        df_receitas = carrega_receitas_v2(processador, log)
         if df_receitas.empty:
             log.append("✗ ERRO: Não há dados válidos de RECEITAS. Verifique a planilha de origem.")
             return log
@@ -2247,11 +2292,17 @@ def gera_relatorio_completo():
         df_certificados = receitas_class.get('CERTIFICADO', empty_receitas.copy())
         df_financeiras = receitas_class.get('FINANCEIRA', empty_receitas.copy())
 
-        log.append(f"✓ Receitas HONORÁRIO (base de cálculos): R$ {df_honorarios['receita'].sum():,.2f}")
-        log.append(f"✓ Receitas CERTIFICADOS (apenas DRE): R$ {df_certificados['receita'].sum():,.2f}")
-        log.append(f"✓ Receitas FINANCEIRAS (apenas DRE): R$ {df_financeiras['receita'].sum():,.2f}")
+        receita_honorarios_total = float(df_honorarios['receita'].sum())
+        receita_certificados_total = float(df_certificados['receita'].sum())
+        receita_financeira_total = float(df_financeiras['receita'].sum())
+        receita_total_geral = receita_honorarios_total + receita_certificados_total + receita_financeira_total
+        clientes_total = int(df_receitas['cliente'].nunique())
 
-        df_despesas = carrega_despesas_v2(ARQUIVO_ENTRADA, log)
+        log.append(f"✓ Receitas HONORÁRIO (base de cálculos): R$ {receita_honorarios_total:,.2f}")
+        log.append(f"✓ Receitas CERTIFICADOS (apenas DRE): R$ {receita_certificados_total:,.2f}")
+        log.append(f"✓ Receitas FINANCEIRAS (apenas DRE): R$ {receita_financeira_total:,.2f}")
+
+        df_despesas = carrega_despesas_v2(processador, log)
         if df_despesas.empty:
             log.append("✗ ERRO: Não há dados válidos de DESPESAS. Verifique a planilha de origem.")
             return log
@@ -2321,11 +2372,17 @@ def gera_relatorio_completo():
             df_margem_regime, df_margem_cliente, df_receitas, df_desp_rateado_geral, total_retiradas
         )
 
-        dre = gerar_dre(
-            receita_honorarios=df_honorarios['receita'].sum(),
-            receita_certificados=df_certificados['receita'].sum(),
-            receita_financeira=df_financeiras['receita'].sum(),
+        dre = calculadora.gerar_dre(
+            receita_honorarios=receita_honorarios_total,
+            receita_certificados=receita_certificados_total,
+            receita_financeira=receita_financeira_total,
             df_despesas_operacionais=df_desp_rateado_geral
+        )
+
+        df_margem_contribuicao = calculadora.calcular_margem_contribuicao(
+            receita_total=receita_total_geral,
+            df_despesas=df_desp_rateado_geral,
+            clientes_total=clientes_total
         )
 
         df_resumo_meta = gera_resumo_retirada_simplificado(
@@ -2358,6 +2415,7 @@ def gera_relatorio_completo():
             ('Res_Regime_Com_Peso_Sem_PL', df_regime_peso_no_pl_excel),
             ('Res_Segmento_Com_Peso_Sem_PL', df_seg_peso_no_pl_excel),
             ('DRE_Simplificada', dre),
+            ('DRE_Margem_Contribuicao', df_margem_contribuicao),
             ('Margem_Contribuicao_Regime', df_margem_regime),
             ('Margem_Contribuicao_Segmento', df_margem_segmento),
             ('Margem_Contribuicao_Cliente', df_margem_cliente),
@@ -2384,24 +2442,21 @@ def gera_relatorio_completo():
         total_abas = len(nomes_abas)
         log.append(f"✓ Abas preparadas para exportação ({total_abas} incluindo Log): {', '.join(nomes_abas)}")
 
-        with pd.ExcelWriter(ARQUIVO_SAIDA, engine='openpyxl') as writer:
-            for nome, df_sheet in abas_para_salvar:
-                _safe_to_excel(df_sheet, writer, nome)
+        formatador = FormatadorExcel(ARQUIVO_SAIDA)
+        formatador.salvar(abas_para_salvar, log)
 
-            log.append(f"✓ Arquivo Excel salvo em: {str(ARQUIVO_SAIDA.resolve())}")
-            log.append(f"✓ Total de abas geradas: {total_abas}")
+        log.append(f"✓ Arquivo Excel salvo em: {str(ARQUIVO_SAIDA.resolve())}")
+        log.append(f"✓ Total de abas geradas: {total_abas}")
 
-            try:
-                ARQUIVO_LOG.parent.mkdir(parents=True, exist_ok=True)
-                sucesso_log_msg = f"✓ Log exportado para: {ARQUIVO_LOG.resolve()}"
-                linhas_log = [_sanitize_excel_text(item) for item in (log + [sucesso_log_msg])]
-                conteudo_log = "\n".join(linhas_log)
-                ARQUIVO_LOG.write_text(conteudo_log, encoding='utf-8')
-                log.append(sucesso_log_msg)
-            except Exception as exc:
-                log.append(f"⚠ Não foi possível gravar log externo: {exc}")
-
-            _safe_to_excel(pd.DataFrame({"log": log}), writer, 'Log')
+        try:
+            ARQUIVO_LOG.parent.mkdir(parents=True, exist_ok=True)
+            sucesso_log_msg = f"✓ Log exportado para: {ARQUIVO_LOG.resolve()}"
+            linhas_log = [_sanitize_excel_text(item) for item in (log + [sucesso_log_msg])]
+            conteudo_log = "\n".join(linhas_log)
+            ARQUIVO_LOG.write_text(conteudo_log, encoding='utf-8')
+            log.append(sucesso_log_msg)
+        except Exception as exc:
+            log.append(f"⚠ Não foi possível gravar log externo: {exc}")
 
         valida = valida_resultado(
             df_receitas,
@@ -2443,10 +2498,13 @@ def valida_resultado(
     total_f = df_financeiras['receita'].sum()
     total_receitas = df_receitas['receita'].sum()
     delta_receitas = abs((total_h + total_c + total_f) - total_receitas)
-    if delta_receitas < 0.01:
-        checks.append("✓ Receitas por classificação conferem com o total.")
+    delta_pct = delta_receitas / (abs(total_receitas) or 1.0)
+    if delta_pct < TOL_OK:
+        checks.append("✓ Receitas conferem (δ < 0,01%).")
+    elif delta_pct < TOL_WARN:
+        checks.append(f"⚠️ Pequena divergência: {delta_pct:.4%}")
     else:
-        checks.append(f"⚠️ Divergência em receitas: R$ {delta_receitas:,.2f}")
+        checks.append(f"❌ Divergência relevante: R$ {delta_receitas:,.2f}")
 
     total_oper = df_despesas_operacionais['valor'].sum()
     total_desp = df_despesas['valor'].sum()

@@ -1,0 +1,28 @@
+{
+  "paths": {
+    "diretorio_base": ".",
+    "arquivo_entrada": "tabela resultados.xlsx",
+    "arquivo_saida": "analise_financeira_v3.xlsx",
+    "arquivo_log": "analise_log.txt"
+  },
+  "parametros": {
+    "meses_acumulados": 10,
+    "top_n_clientes": 10,
+    "top_n_despesas": 10,
+    "alfa_volume": 0.7,
+    "beta_ticket": 0.3
+  },
+  "pesos_complexidade_regime": {
+    "Simples Nacional": 1.0,
+    "Lucro Presumido": 1.2,
+    "Lucro Real": 1.6,
+    "PF": 0.0,
+    "Imune/Isenta": 1.2,
+    "Paralisada": 0.5,
+    "Não informado": 1.0
+  },
+  "margem_variaveis_tipos": [
+    "TRABALHISTA",
+    "TRIBUTÁRIA"
+  ]
+}
