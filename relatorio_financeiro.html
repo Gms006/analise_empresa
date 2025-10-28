@@ -74,6 +74,12 @@
     .tabs{display:flex;gap:8px;margin:6px 0 14px;flex-wrap:wrap}
     .tab{padding:8px 12px;border-radius:999px;border:1px solid #334155;background:#0b1324;color:#cbd5e1;font-weight:600;font-size:12px;cursor:pointer}
     .tab.active{border-color:#60a5fa;background:linear-gradient(180deg,rgba(59,130,246,.18),rgba(59,130,246,.06));color:#e2e8f0}
+    .table-host{overflow-x:auto}
+    .table-host table{min-width:640px}
+    .table-host table th,.table-host table td{white-space:normal;word-break:break-word}
+    .btn-group{display:inline-flex;gap:6px;padding:4px;background:#0b1324;border-radius:999px;border:1px solid #1f2a3c}
+    .btn-group .toggle{background:transparent;border:1px solid #1f2a3c;color:#cbd5e1;font-weight:600;font-size:12px;padding:6px 12px;border-radius:999px;cursor:pointer}
+    .btn-group .toggle.active{border-color:#60a5fa;background:linear-gradient(180deg,rgba(59,130,246,.18),rgba(59,130,246,.06));color:#e2e8f0}
     table{width:100%;border-collapse:separate;border-spacing:0 8px}
     thead th{color:#9ca3af;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;text-align:left;padding:8px}
     tbody td{padding:10px 8px;background:#0a1220;border-top:1px solid #20314a;border-bottom:1px solid #20314a}
@@ -204,15 +210,21 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" id="card-resultado">
       <div class="card-header">
-        <h2 style="margin:0">Resultado por Regime</h2>
+        <h2 style="margin:0">Resultado Operacional</h2>
         <div class="card-actions">
           <span class="badge warn hidden" data-status-sheet="Resultado_Regime_Com_Peso">Sem dados</span>
-          <button class="btn-sm" data-export="tabRegimeComPeso">⬇️ Exportar CSV</button>
+          <span class="badge warn hidden" data-status-sheet="Resultado_Segmento_Com_Peso">Sem dados</span>
+          <div class="btn-group" role="group" aria-label="Alternar visão do resultado">
+            <button class="btn-sm toggle active" data-resultado-view="regime">Por Regime</button>
+            <button class="btn-sm toggle" data-resultado-view="regimeAtividade">Regime + Atividade</button>
+          </div>
+          <button class="btn-sm" data-export="tabResultado">⬇️ Exportar CSV</button>
         </div>
       </div>
-      <div id="tabRegimeComPeso"></div>
+      <div class="filter-chips" id="chip-segmento"></div>
+      <div id="tabResultado" class="table-host"></div>
     </section>
 
     <section class="card" style="margin-top:16px">
@@ -222,7 +234,7 @@
           <button class="btn-sm" data-export="tabROI">⬇️ Exportar CSV</button>
         </div>
       </div>
-      <div id="tabROI"></div>
+      <div id="tabROI" class="table-host"></div>
     </section>
 
     <section class="card" style="margin-top:16px">
@@ -232,79 +244,38 @@
           <button class="btn-sm" data-export="tabTopClientes">⬇️ Exportar CSV</button>
         </div>
       </div>
-      <div id="tabTopClientes"></div>
+      <div id="tabTopClientes" class="table-host"></div>
     </section>
 
-    <div class="grid cols-2" style="margin-top:16px">
-      <section class="card" id="card-segmento">
-        <div class="card-header">
-          <h2 style="margin:0">Resultado por Regime + Atividade</h2>
-          <div class="card-actions">
-            <span class="badge warn hidden" data-status-sheet="Resultado_Segmento_Com_Peso">Sem dados</span>
-            <button class="btn-sm" data-export="tabSegmentoComPeso">⬇️ Exportar CSV</button>
-          </div>
-        </div>
-        <div class="filter-chips" id="chip-segmento"></div>
-        <div id="tabSegmentoComPeso"></div>
-      </section>
-      <section class="card" id="card-tickets">
+    <section class="card" style="margin-top:16px" id="card-tickets">
         <div class="card-header">
           <h2 style="margin:0">Tickets Médios</h2>
         <div class="card-actions">
           <span class="badge warn hidden" data-status-sheet="Ticket_Regime">Sem dados</span>
           <span class="badge warn hidden" data-status-sheet="Ticket_Regime_Atividade">Sem dados</span>
           <span class="badge warn hidden" data-status-sheet="Ticket_Clientes">Sem dados</span>
-          <button class="btn-sm" data-export="tabTicketsRegime">⬇️ Exportar CSV</button>
-          <button class="btn-sm" data-export="tabTicketsRegAtiv">⬇️ Exportar CSV</button>
-          <button class="btn-sm" data-export="tabTicketsClientes">⬇️ Exportar CSV</button>
+          <button class="btn-sm" data-export="tabTickets">⬇️ Exportar CSV</button>
         </div>
         </div>
         <div class="tabs">
-          <button class="tab active" data-tab="tabTicketsRegime">Por Regime</button>
-          <button class="tab" data-tab="tabTicketsRegAtiv">Regime + Atividade</button>
-          <button class="tab" data-tab="tabTicketsClientes">Top Clientes</button>
+          <button class="tab active" data-ticket-view="regime">Por Regime</button>
+          <button class="tab" data-ticket-view="regimeAtividade">Regime + Atividade</button>
+          <button class="tab" data-ticket-view="clientes">Top Clientes</button>
         </div>
         <div class="filter-chips" id="chip-tickets"></div>
-        <div id="tabTicketsRegime"></div>
-        <div id="tabTicketsRegAtiv" class="hidden"></div>
-        <div id="tabTicketsClientes" class="hidden"></div>
-      </section>
-    </div>
+        <div id="tabTickets" class="table-host"></div>
+    </section>
 
-    <div class="grid cols-2" style="margin-top:16px">
-      <section class="card" id="card-top-desp">
-        <div class="card-header">
-          <h2 style="margin:0">Top Despesas (Geral)</h2>
-          <div class="card-actions">
-            <span class="badge warn hidden" data-status-sheet="Top_Despesas">Sem dados</span>
-            <button class="btn-sm" data-export="tabTopDespesas">⬇️ Exportar CSV</button>
-            <button class="btn-ghost" data-excel="Top_Despesas">Ver no Excel</button>
-          </div>
-        </div>
-        <div id="tabTopDespesas"></div>
-      </section>
-      <section class="card" id="card-top-desp-adm">
-        <div class="card-header">
-          <h2 style="margin:0">Top Despesas Administrativas</h2>
-          <div class="card-actions">
-            <span class="badge warn hidden" data-status-sheet="Top_Despesas_Adm">Sem dados</span>
-            <button class="btn-sm" data-export="tabTopDespesasAdm">⬇️ Exportar CSV</button>
-            <button class="btn-ghost" data-excel="Top_Despesas_Adm">Ver no Excel</button>
-          </div>
-        </div>
-        <div id="tabTopDespesasAdm"></div>
-      </section>
-    </div>
-
-    <section class="card" style="margin-top:16px" id="card-resumo">
+    <section class="card" style="margin-top:16px" id="card-top-desp">
       <div class="card-header">
-        <h2 style="margin:0">Resumo de Retirada (sem pró-labore no resultado)</h2>
+        <h2 style="margin:0">Top Despesas (Geral)</h2>
         <div class="card-actions">
-          <span class="badge warn hidden" data-status-sheet="Resumo_Retirada">Sem dados</span>
-          <button class="btn-sm" data-export="tabResumoRetirada">⬇️ Exportar CSV</button>
+          <span class="badge warn hidden" data-status-sheet="Top_Despesas">Sem dados</span>
+          <button class="btn-sm" data-export="tabTopDespesas">⬇️ Exportar CSV</button>
+          <button class="btn-ghost" data-excel="Top_Despesas">Ver no Excel</button>
         </div>
       </div>
-      <div id="tabResumoRetirada"></div>
+      <div id="tabTopDespesas" class="table-host"></div>
     </section>
 
     <section class="card" style="margin-top:16px" id="card-dre">
@@ -315,7 +286,34 @@
           <button class="btn-sm" data-export="tabDRE">⬇️ Exportar CSV</button>
         </div>
       </div>
-      <div id="tabDRE"></div>
+      <div id="tabDRE" class="table-host"></div>
+    </section>
+
+    <section class="card" style="margin-top:16px" id="card-margem">
+      <div class="card-header">
+        <h2 style="margin:0">Margem de Contribuição</h2>
+        <div class="card-actions">
+          <span class="badge warn hidden" data-status-sheet="DRE_Margem_Contribuicao">Sem dados</span>
+          <button class="btn-sm" data-export="cardMargem">⬇️ Exportar CSV</button>
+        </div>
+      </div>
+      <div class="grid auto-fit" id="margem-cards">
+        <div class="kpi" id="margem-total">
+          <div class="label">Valor Total</div>
+          <div class="value">—</div>
+          <div class="desc">Margem acumulada</div>
+        </div>
+        <div class="kpi alt" id="margem-mensal">
+          <div class="label">Valor Mensal</div>
+          <div class="value">—</div>
+          <div class="desc">Base nos últimos 10 meses</div>
+        </div>
+        <div class="kpi" id="margem-cliente">
+          <div class="label">Valor por Cliente (mensal)</div>
+          <div class="value">—</div>
+          <div class="desc"><span id="margem-clientes-total" class="pill">— clientes</span></div>
+        </div>
+      </div>
     </section>
 
     <section class="card" style="margin-top:16px" id="card-validacoes">
@@ -354,104 +352,52 @@
       return n>1 ? n/100 : n;
     }
     const BRL = new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
-    const PCT = new Intl.NumberFormat('pt-BR',{style:'percent', maximumFractionDigits:1});
+    const PCT = new Intl.NumberFormat('pt-BR',{style:'percent', minimumFractionDigits:1, maximumFractionDigits:1});
     const DEC = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:2});
     const INT = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:0});
 
     const sum = (rows, getter) => (rows||[]).reduce((a,r)=> a + asNum(getter(r)), 0);
 
-    // ---------- Mapeador de sinônimos por aba ----------
-    const COLMAP = {
-      Ticket_Geral:{
-        receita_mensal: ['receita_mensal','receita_mensal_total','receita_total_mensal','receitamensal'],
-        ticket_medio_mensal: ['ticket_medio_mensal','ticket_mensal','ticketmedio'],
-        qtd_clientes: ['qtd_clientes','clientes','n_clientes','total_clientes']
-      },
-      Ticket_Regime:{
-        regime:['regime','regime_base'],
-        clientes:['clientes','qtd_clientes'],
-        receita:['receita','receita_mensal','receita_total_mensal'],
-        ticketMedio:['ticketmedio','ticket_medio','ticket_medio_mensal','ticket_mensal']
-      },
-      Ticket_Regime_Atividade:{
-        regime:['regime','regime_base'],
-        atividade:['atividade','segmento'],
-        clientes:['clientes','qtd_clientes'],
-        receita:['receita','receita_mensal','receita_total_mensal'],
-        ticketMedio:['ticketmedio','ticket_medio','ticket_medio_mensal','ticket_mensal']
-      },
-      Ticket_Clientes:{
-        rank:['rank','#'],
-        cliente:['cliente','empresa','razao_social'],
-        regime:['regime','regime_base'],
-        atividade:['atividade','segmento'],
-        receita_mensal:['receita_mensal','receita'],
-        ticket_mensal:['ticket_mensal','ticket_medio_mensal','ticket']
-      },
-      Resultado_Regime_Com_Peso:{
-        regime_base:['regime_base','regime'],
-        qtd_clientes:['qtd_clientes','clientes'],
-        receita_mensal:['receita_mensal','receita_total_mensal'],
-        custo_mensal:['custo_mensal','custo_total_mensal'],
-        resultado_mensal:['resultado_mensal','lucro_mensal'],
-        ticket_medio_mensal:['ticket_medio_mensal','ticket_mensal'],
-        custo_medio_mensal:['custo_medio_mensal','custo_medio'],
-        resultado_medio_mensal:['resultado_medio_mensal','resultado_medio']
-      },
-      Resultado_Segmento_Com_Peso:{
-        regime_base:['regime_base','regime'],
-        atividade:['atividade','segmento'],
-        qtd_clientes:['qtd_clientes','clientes'],
-        receita_mensal:['receita_mensal','receita'],
-        custo_mensal:['custo_mensal','custo'],
-        resultado_mensal:['resultado_mensal','lucro_mensal'],
-        ticket_medio_mensal:['ticket_medio_mensal','ticket_mensal'],
-        custo_medio_mensal:['custo_medio_mensal','custo_medio'],
-        resultado_medio_mensal:['resultado_medio_mensal','resultado_medio']
-      },
-      Top_Despesas:{
-        rank:['rank','#'],
-        grupo:['grupo','categoria'],
-        item_nome:['item_nome','item','descricao'],
-        valor:['valor','valor_total','montante'],
-        perc_total_despesas:['perc_total_despesas','%_do_total','percentual']
-      },
-      Top_Despesas_Adm:{
-        rank:['rank','#'],
-        item_nome:['item_nome','item'],
-        valor:['valor','valor_total','montante'],
-        perc_no_grupo:['perc_no_grupo','%_no_grupo','percentual']
-      },
-      Resumo_Retirada:{
-        alfa_volume:['alfa_volume','alfa'],
-        beta_ticket:['beta_ticket','beta'],
-        prolabores_incluidos_em_adm:[
-          'prolabores_incluidos_em_adm',
-          'prolabores_total',
-          'total_prolabores'
-        ],
-        observacao:['observacao','obs','observacoes']
-      },
-      DRE_Simplificada:{
-        bloco:['bloco'],
-        linha:['linha','descricao'],
-        valor_total:['valor_total','valor'],
-        perc_receita:['perc_receita','percentual_receita_total','perc_receita_total'],
-        perc_resultado_liquido:[
-          'perc_resultado_liquido',
-          'percentual_resultado_operacional',
-          'perc_resultado_operacional'
-        ],
-        observacao:['observacao','obs']
-      }
-    };
+    // ---------- Metadados de schema ----------
+    let schemas = {};
+
+    function buildSchemas(wb){
+      const result = {};
+      (wb.SheetNames||[]).forEach(name=>{
+        if(!name.startsWith('_metadata_')) return;
+        const base = name.replace(/^_metadata_/, '');
+        const sheet = wb.Sheets[name];
+        if(!sheet) return;
+        const rows = XLSX.utils.sheet_to_json(sheet) || [];
+        const lookup = {};
+        rows.forEach(entry=>{
+          const campo = entry.campo ?? entry.Campo ?? entry.CAMPO;
+          if(!campo) return;
+          const norm = normalizeKey(campo);
+          lookup[norm] = {
+            campo,
+            tipo: entry.tipo ?? entry.Tipo ?? entry.TIPO ?? '',
+            descricao: entry.descricao ?? entry.Descricao ?? entry.DESCRICAO ?? ''
+          };
+        });
+        result[base] = { rows, lookup };
+      });
+      return result;
+    }
+
+    function getSchemaKey(sheetName, field){
+      const schema = schemas[sheetName];
+      if(!schema) return normalizeKey(field);
+      const entry = schema.lookup[normalizeKey(field)];
+      return entry ? normalizeKey(entry.campo) : normalizeKey(field);
+    }
 
     function pick(row, field, sheetName){
-      const M = COLMAP[sheetName]||{};
-      const candidates = (M[field] || [field]).map(normalizeKey);
       const map = rowToMap(row);
-      for(const c of candidates){ if(c in map) return map[c]; }
-      return undefined;
+      const key = getSchemaKey(sheetName, field);
+      if(key in map) return map[key];
+      const alt = normalizeKey(field);
+      return map[alt];
     }
 
     function sheetRows(wb, name){
@@ -464,17 +410,17 @@
     function getSheets(wb){
       return {
         g: sheetRows(wb,'Ticket_Geral')||[],
-    tr: sheetRows(wb,'Ticket_Regime')||[],
-    tra: sheetRows(wb,'Ticket_Regime_Atividade')||[],
-    tc: sheetRows(wb,'Ticket_Clientes')||[],
-    rc: sheetRows(wb,'Resultado_Regime_Com_Peso')||[],
-    segc: sheetRows(wb,'Resultado_Segmento_Com_Peso')||[],
-    td: sheetRows(wb,'Top_Despesas')||[],
-    tda: sheetRows(wb,'Top_Despesas_Adm')||[],
-    rr: sheetRows(wb,'Resumo_Retirada')||[],
-    dre: sheetRows(wb,'DRE_Simplificada')||[]
-  };
-}
+        tr: sheetRows(wb,'Ticket_Regime')||[],
+        tra: sheetRows(wb,'Ticket_Regime_Atividade')||[],
+        tc: sheetRows(wb,'Ticket_Clientes')||[],
+        rc: sheetRows(wb,'Resultado_Regime_Com_Peso')||[],
+        segc: sheetRows(wb,'Resultado_Segmento_Com_Peso')||[],
+        td: sheetRows(wb,'Top_Despesas')||[],
+        rr: sheetRows(wb,'Resumo_Retirada')||[],
+        dre: sheetRows(wb,'DRE_Simplificada')||[],
+        mc: sheetRows(wb,'DRE_Margem_Contribuicao')||[]
+      };
+    }
 
     function computeKPIs(S){
       const g0 = S.g[0] || {};
@@ -661,18 +607,13 @@
       });
     }
 
-    function rowsTopDespesasAdm(rows){
-      const mapped = (rows||[]).map((r,i)=>({
-        rank: asNum(pick(r,'rank','Top_Despesas_Adm')) || i+1,
-        item_nome: pick(r,'item_nome','Top_Despesas_Adm') || '',
-        valor: asNum(pick(r,'valor','Top_Despesas_Adm'))
+    function rowsMargemContribuicao(rows){
+      return (rows||[]).map(r=>({
+        margem_total: asNum(pick(r,'margem_total','DRE_Margem_Contribuicao')),
+        margem_mensal: asNum(pick(r,'margem_mensal','DRE_Margem_Contribuicao')),
+        clientes_total: asNum(pick(r,'clientes_total','DRE_Margem_Contribuicao')),
+        margem_por_cliente: asNum(pick(r,'margem_por_cliente','DRE_Margem_Contribuicao'))
       }));
-      const tot = sum(mapped, r=> r.valor);
-      return mapped.map((r,i)=>{
-        const valor = asNum(r.valor);
-        const p = tot? (valor/tot):0;
-        return { rank: r.rank || i+1, item_nome:r.item_nome, valor, perc_no_grupo:p };
-      });
     }
 
     const state = {
@@ -680,7 +621,9 @@
       datasets:{},
       filters:{segmentRegime:null,ticketRegime:null},
       searchTerm:'',
-      sheetStatus:{missingOptional:[]}
+      sheetStatus:{missingOptional:[]},
+      resultadoView:'regime',
+      ticketView:'regime'
     };
 
     const TABLE_CACHE = {};
@@ -698,7 +641,7 @@
       'Ticket_Clientes',
       'Resultado_Segmento_Com_Peso',
       'Top_Despesas',
-      'Top_Despesas_Adm'
+      'DRE_Margem_Contribuicao'
     ];
 
     const showLoading = (show)=>{
@@ -726,8 +669,8 @@
       return (obs-exp)/denom;
     };
 
-    function registerTableData(targetId, columns, rows){
-      TABLE_CACHE[targetId]={columns,rows};
+    function registerTableData(targetId, columns, rows, metaSheet=null){
+      TABLE_CACHE[targetId]={columns,rows,metaSheet};
     }
 
     function tableFromData(targetId, columns, rows, options={}){
@@ -735,7 +678,7 @@
       if(!root) return;
       if(!rows||!rows.length){
         root.innerHTML='<div class="empty-message">Sem dados disponíveis.</div>';
-        registerTableData(targetId, columns, []);
+        registerTableData(targetId, columns, [], options.metaSheet||null);
         return;
       }
       const head=columns.map(c=>`<th${c.right?' style="text-align:right"':''}>${c.label||c.key}</th>`).join('');
@@ -747,7 +690,7 @@
         }).join('')+'</tr>';
       }).join('');
       root.innerHTML=`<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
-      registerTableData(targetId, columns, rows);
+      registerTableData(targetId, columns, rows, options.metaSheet||null);
       const trs=root.querySelectorAll('tbody tr');
       trs.forEach((tr,idx)=>{
         if(options.getRowClass){
@@ -868,32 +811,87 @@
       document.getElementById('meta-alfa').textContent = alfa || '–';
       document.getElementById('meta-beta').textContent = beta || '–';
     }
-    function renderResultadoRegime(){
-      const regimesData = applySearch(state.datasets.resultadoRegimeComPeso||[]);
-      tableFromData('tabRegimeComPeso',[
-        {key:'regime',label:'Regime'},
-        {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
-        {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'custo',label:'Custo Mensal',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'custoMedio',label:'Custo Médio',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'resultado',label:'Resultado',right:true,format:v=>{const val=asNum(v);return (val>=0?'<span class="pill positive">':'<span class="pill negative">')+BRL.format(val)+'</span>';},export:v=>asNum(v)},
-        {key:'resultadoMedio',label:'Resultado Médio',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'margem',label:'Margem',right:true,format:v=>PCT.format(asNum(v))}
-      ], regimesData, {
-        onRowClick:(row)=>{
-          state.filters.segmentRegime=row.regime||null;
-          renderSegmentos();
-          renderFilterChip('chip-segmento', state.filters.segmentRegime, ()=>{
-            state.filters.segmentRegime=null;
-            renderSegmentos();
-          });
-        },
-        getRowClass:(row)=> state.filters.segmentRegime && row.regime===state.filters.segmentRegime ? 'row-active' : ''
-      });
 
-      const hasCom = (state.datasets.resultadoRegimeComPeso||[]).some(r=>asNum(r.receita)||asNum(r.resultado));
-      statusBadge('Resultado_Regime_Com_Peso', hasCom);
+    function updateResultadoToggle(){
+      document.querySelectorAll('[data-resultado-view]').forEach(btn=>{
+        const view = btn.getAttribute('data-resultado-view');
+        btn.classList.toggle('active', view === state.resultadoView);
+      });
+    }
+
+    function bindResultadoToggles(){
+      document.querySelectorAll('[data-resultado-view]').forEach(btn=>{
+        if(btn.dataset.bound) return;
+        btn.dataset.bound='true';
+        btn.addEventListener('click',()=>{
+          const view = btn.getAttribute('data-resultado-view');
+          if(!view) return;
+          state.resultadoView = view;
+          if(view !== 'regimeAtividade'){
+            state.filters.segmentRegime = null;
+          }
+          renderResultado();
+        });
+      });
+    }
+
+    function renderResultado(){
+      updateResultadoToggle();
+      const chipContainer = document.getElementById('chip-segmento');
+      if(chipContainer) chipContainer.innerHTML = '';
+
+      const regimeRows = state.datasets.resultadoRegimeComPeso||[];
+      const segmentoRows = state.datasets.resultadoSegmentoComPeso||[];
+
+      if(state.resultadoView === 'regime'){
+        const regimesData = applySearch(regimeRows);
+        tableFromData('tabResultado',[
+          {key:'regime',label:'Regime'},
+          {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
+          {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))},
+          {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
+          {key:'custo',label:'Custo Mensal',right:true,format:v=>BRL.format(asNum(v))},
+          {key:'custoMedio',label:'Custo Médio',right:true,format:v=>BRL.format(asNum(v))},
+          {key:'resultado',label:'Resultado',right:true,format:v=>{const val=asNum(v);return (val>=0?'<span class="pill positive">':'<span class="pill negative">')+BRL.format(val)+'</span>';},export:v=>asNum(v)},
+          {key:'resultadoMedio',label:'Resultado Médio',right:true,format:v=>BRL.format(asNum(v))},
+          {key:'margem',label:'Margem',right:true,format:v=>formatPercentFraction(v)}
+        ], regimesData, {
+          onRowClick:(row)=>{
+            state.filters.segmentRegime=row.regime||null;
+            state.resultadoView='regimeAtividade';
+            updateResultadoToggle();
+            renderResultado();
+          },
+          getRowClass:(row)=> state.filters.segmentRegime && row.regime===state.filters.segmentRegime ? 'row-active' : '',
+          metaSheet:'Resultado_Regime_Com_Peso'
+        });
+        const hasReg = regimesData.some(r=>asNum(r.receita)||asNum(r.resultado));
+        statusBadge('Resultado_Regime_Com_Peso', hasReg);
+        statusBadge('Resultado_Segmento_Com_Peso', segmentoRows.length>0);
+      }else{
+        const filtered = segmentoRows.filter(row=> !state.filters.segmentRegime || row.regime===state.filters.segmentRegime);
+        const finalRows = applySearch(filtered);
+        tableFromData('tabResultado',[
+          {key:'regime',label:'Regime'},
+          {key:'atividade',label:'Atividade'},
+          {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
+          {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
+          {key:'custo',label:'Custo Mensal',right:true,format:v=>BRL.format(asNum(v))},
+          {key:'custoMedio',label:'Custo Médio',right:true,format:v=>BRL.format(asNum(v))},
+          {key:'resultado',label:'Resultado',right:true,format:v=>{const val=asNum(v);return (val>=0?'<span class="pill positive">':'<span class="pill negative">')+BRL.format(val)+'</span>';},export:v=>asNum(v)},
+          {key:'resultadoMedio',label:'Resultado Médio',right:true,format:v=>BRL.format(asNum(v))}
+        ], finalRows, {
+          getRowClass:(row)=> state.filters.segmentRegime && row.regime===state.filters.segmentRegime ? 'row-active' : '',
+          metaSheet:'Resultado_Segmento_Com_Peso'
+        });
+        statusBadge('Resultado_Regime_Com_Peso', regimeRows.length>0);
+        const hasSeg = (segmentoRows||[]).some(r=>asNum(r.receita)||asNum(r.resultado));
+        statusBadge('Resultado_Segmento_Com_Peso', hasSeg);
+        renderFilterChip('chip-segmento', state.filters.segmentRegime, ()=>{
+          state.filters.segmentRegime=null;
+          renderResultado();
+        });
+      }
     }
 
     function renderROI(){
@@ -961,84 +959,126 @@
           return `<span class="badge ${color}">${v}</span>`;
         }}
       ], clientesComAcum, {
-        getRowClass: row => row.classe_abc === 'A' ? 'row-highlight' : ''
+        getRowClass: row => row.classe_abc === 'A' ? 'row-highlight' : '',
+        metaSheet:'Ticket_Clientes'
       });
     }
 
-    function renderSegmentos(){
-      const rows = state.datasets.resultadoSegmentoComPeso||[];
-      const filtered = rows.filter(row=> !state.filters.segmentRegime || row.regime===state.filters.segmentRegime);
-      const finalRows = applySearch(filtered);
-      tableFromData('tabSegmentoComPeso',[
-        {key:'regime',label:'Regime'},
-        {key:'atividade',label:'Atividade'},
-        {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
-        {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'custo',label:'Custo Mensal',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'custoMedio',label:'Custo Médio',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'resultado',label:'Resultado',right:true,format:v=>{const val=asNum(v);return (val>=0?'<span class="pill positive">':'<span class="pill negative">')+BRL.format(val)+'</span>';},export:v=>asNum(v)},
-        {key:'resultadoMedio',label:'Resultado Médio',right:true,format:v=>BRL.format(asNum(v))}
-      ], finalRows);
-      const hasSeg = (rows||[]).some(r=>asNum(r.receita)||asNum(r.resultado));
-      statusBadge('Resultado_Segmento_Com_Peso', hasSeg);
-      renderFilterChip('chip-segmento', state.filters.segmentRegime, ()=>{
-        state.filters.segmentRegime=null;
-        renderSegmentos();
+    function updateTicketTabs(){
+      document.querySelectorAll('[data-ticket-view]').forEach(btn=>{
+        const view = btn.getAttribute('data-ticket-view');
+        btn.classList.toggle('active', view === state.ticketView);
+      });
+    }
+
+    function bindTicketTabs(){
+      document.querySelectorAll('[data-ticket-view]').forEach(btn=>{
+        if(btn.dataset.bound) return;
+        btn.dataset.bound='true';
+        btn.addEventListener('click',()=>{
+          const view = btn.getAttribute('data-ticket-view');
+          if(!view) return;
+          state.ticketView = view;
+          if(view !== 'regimeAtividade'){
+            state.filters.ticketRegime = null;
+          }
+          renderTickets();
+          renderTopClientes();
+        });
       });
     }
 
     function renderTickets(){
-      const rowsReg = applySearch(state.datasets.ticketRegime||[]);
-      tableFromData('tabTicketsRegime',[
-        {key:'regime',label:'Regime'},
-        {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
-        {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'perc_receita',label:'% Receita',right:true,format:v=>PCT.format(asNum(v))},
-        {key:'perc_clientes',label:'% Clientes',right:true,format:v=>PCT.format(asNum(v))},
-        {key:'indice_concentracao',label:'Índice Concentração',right:true,format:v=>DEC.format(asNum(v))}
-      ], rowsReg, {
-        onRowClick:(row)=>{
-          state.filters.ticketRegime=row.regime||null;
-          renderTicketDetalhes();
-          renderFilterChip('chip-tickets', state.filters.ticketRegime, ()=>{
-            state.filters.ticketRegime=null;
-            renderTicketDetalhes();
+      updateTicketTabs();
+
+      const showPlaceholder = (metaSheet)=>{
+        const root=document.getElementById('tabTickets');
+        if(root){
+          root.innerHTML='<div class="empty-message">N/A</div>';
+          registerTableData('tabTickets', [], [], metaSheet||null);
+        }
+      };
+
+      const mapConfig = {
+        regime: ()=>{
+          const dataset = state.datasets.ticketRegime||[];
+          if(!dataset.length){
+            console.warn('Ticket médio não encontrado');
+            showPlaceholder('Ticket_Regime');
+            return;
+          }
+          const rowsReg = applySearch(dataset);
+          const options = {
+            onRowClick:(row)=>{
+              state.filters.ticketRegime = row?.regime || null;
+              state.ticketView = 'regimeAtividade';
+              renderTickets();
+              renderTopClientes();
+            },
+            getRowClass:(row)=> state.filters.ticketRegime && row.regime===state.filters.ticketRegime ? 'row-active' : ''
+          };
+          tableFromData('tabTickets',[
+            {key:'regime',label:'Regime'},
+            {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
+            {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
+            {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))},
+            {key:'perc_receita',label:'% Receita',right:true,format:v=>PCT.format(asNum(v))},
+            {key:'perc_clientes',label:'% Clientes',right:true,format:v=>PCT.format(asNum(v))},
+            {key:'indice_concentracao',label:'Índice Concentração',right:true,format:v=>DEC.format(asNum(v))}
+          ], rowsReg, {...options, metaSheet:'Ticket_Regime'});
+        },
+        regimeAtividade: ()=>{
+          const base = state.datasets.ticketRegimeAtividade||[];
+          if(!base.length){
+            console.warn('Ticket médio não encontrado');
+            showPlaceholder('Ticket_Regime_Atividade');
+            return;
+          }
+          const filtered = base.filter(row=> !state.filters.ticketRegime || row.regime===state.filters.ticketRegime);
+          const rows = applySearch(filtered);
+          tableFromData('tabTickets',[
+            {key:'regime',label:'Regime'},
+            {key:'atividade',label:'Atividade'},
+            {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
+            {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
+            {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))}
+          ], rows, {
+            getRowClass:(row)=> state.filters.ticketRegime && row.regime===state.filters.ticketRegime ? 'row-active' : '',
+            metaSheet:'Ticket_Regime_Atividade'
           });
         },
-        getRowClass:(row)=> state.filters.ticketRegime && row.regime===state.filters.ticketRegime ? 'row-active' : ''
-      });
-      const hasTk = (state.datasets.ticketRegime||[]).some(r=>asNum(r.receita)||asNum(r.clientes));
-      statusBadge('Ticket_Regime', hasTk);
-      renderTicketDetalhes();
+        clientes: ()=>{
+          const base = state.datasets.ticketClientes||[];
+          if(!base.length){
+            console.warn('Ticket médio não encontrado');
+            showPlaceholder('Ticket_Clientes');
+            return;
+          }
+          const filtered = base.filter(row=> !state.filters.ticketRegime || row.regime===state.filters.ticketRegime);
+          const rows = applySearch(filtered);
+          tableFromData('tabTickets',[
+            {key:'rank',label:'#',right:true,format:v=>INT.format(asNum(v))},
+            {key:'cliente',label:'Cliente'},
+            {key:'regime',label:'Regime'},
+            {key:'atividade',label:'Atividade'},
+            {key:'ticket',label:'Ticket Mensal',right:true,format:v=>BRL.format(asNum(v))},
+            {key:'receita_mensal',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))}
+          ], rows, {metaSheet:'Ticket_Clientes'});
+        }
+      };
+
+      const exec = mapConfig[state.ticketView] || mapConfig.regime;
+      exec();
+
+      statusBadge('Ticket_Regime', (state.datasets.ticketRegime||[]).length>0);
+      statusBadge('Ticket_Regime_Atividade', (state.datasets.ticketRegimeAtividade||[]).length>0);
+      statusBadge('Ticket_Clientes', (state.datasets.ticketClientes||[]).length>0);
+
       renderFilterChip('chip-tickets', state.filters.ticketRegime, ()=>{
         state.filters.ticketRegime=null;
-        renderTicketDetalhes();
+        renderTickets();
+        renderTopClientes();
       });
-    }
-
-    function renderTicketDetalhes(){
-      const filterByRegime = row=> !state.filters.ticketRegime || row.regime===state.filters.ticketRegime;
-      const regAtiv = applySearch((state.datasets.ticketRegimeAtividade||[]).filter(filterByRegime));
-      tableFromData('tabTicketsRegAtiv',[
-        {key:'regime',label:'Regime'},
-        {key:'atividade',label:'Atividade'},
-        {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
-        {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'ticketMedio',label:'Ticket Médio',right:true,format:v=>BRL.format(asNum(v))}
-      ], regAtiv);
-      statusBadge('Ticket_Regime_Atividade', (state.datasets.ticketRegimeAtividade||[]).length>0);
-
-      const clientesRows = (state.datasets.ticketClientes||[]).filter(filterByRegime);
-      const finalClientes = applySearch(clientesRows).slice(0, state.filters.ticketRegime ? clientesRows.length : 25);
-      tableFromData('tabTicketsClientes',[
-        {key:'rank',label:'#',right:true,format:v=>INT.format(asNum(v))},
-        {key:'cliente',label:'Cliente'},
-        {key:'regime',label:'Regime'},
-        {key:'atividade',label:'Atividade'},
-        {key:'ticket',label:'Ticket Mensal',right:true,format:v=>BRL.format(asNum(v))}
-      ], finalClientes);
-      statusBadge('Ticket_Clientes', (state.datasets.ticketClientes||[]).length>0);
     }
 
     function renderTopDespesas(){
@@ -1049,69 +1089,48 @@
         {key:'item_nome',label:'Item'},
         {key:'valor',label:'Valor',right:true,format:v=>BRL.format(asNum(v))},
         {key:'perc_total_despesas',label:'% do Total',right:true,format:v=>PCT.format(asNum(v))}
-      ], top);
+      ], top, {metaSheet:'Top_Despesas'});
       statusBadge('Top_Despesas', (state.datasets.topDespesas||[]).length>0);
-
-      const adm = state.datasets.topDespesasAdm||[];
-      const admFiltered = applySearch(adm);
-      tableFromData('tabTopDespesasAdm',[
-        {key:'rank',label:'#',right:true,format:v=>INT.format(asNum(v))},
-        {key:'item_nome',label:'Item (ADM)'},
-        {key:'valor',label:'Valor',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'perc_no_grupo',label:'% no Grupo',right:true,format:(v,row)=>{
-          const width=Math.min(100,Math.abs(asNum(v))*100);
-          return `<div class="bar-cell"><span>${PCT.format(asNum(v))}</span><div class="bar-wrapper"><div class="bar" style="width:${width}%"></div></div></div>`;
-        },export:v=>asNum(v)}
-      ], admFiltered);
-      statusBadge('Top_Despesas_Adm', (state.datasets.topDespesasAdm||[]).length>0);
     }
 
-    function renderResumo(){
-      const resumo = applySearch(state.datasets.resumoRetirada||[]);
-
-      if(!resumo || !resumo.length){
-        document.getElementById('tabResumoRetirada').innerHTML =
-          '<div class="empty-message">Sem dados disponíveis.</div>';
-        statusBadge('Resumo_Retirada', false);
-        return;
-      }
-
-      tableFromData('tabResumoRetirada', [
-        {key:'alfa_volume',label:'Alfa (Volume)',right:true,format:v=>DEC.format(asNum(v))},
-        {key:'beta_ticket',label:'Beta (Ticket)',right:true,format:v=>DEC.format(asNum(v))},
-        {key:'prolabores_incluidos_em_adm',label:'Pró-labores em ADM',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'observacao',label:'Observações'}
-      ], resumo);
-
-      statusBadge('Resumo_Retirada', true);
+    function formatPercentFraction(value){
+      if(value===null || value===undefined) return '—';
+      const num = Number(value);
+      if(!Number.isFinite(num)) return '—';
+      return PCT.format(num);
     }
 
     function renderDRE(){
       const raw = state.S?.dre || [];
-      const dre = (raw||[]).map(row=>({
-        bloco: pick(row,'bloco','DRE_Simplificada') || '',
-        linha: pick(row,'linha','DRE_Simplificada') || '',
-        valor_total: asNum(pick(row,'valor_total','DRE_Simplificada')),
-        perc_receita: asNum(pick(row,'perc_receita','DRE_Simplificada')),
-        perc_resultado_liquido: asNum(pick(row,'perc_resultado_liquido','DRE_Simplificada')),
-        observacao: pick(row,'observacao','DRE_Simplificada') || ''
-      }));
+      const dre = (raw||[]).map(row=>{
+        const receita = pick(row,'percentual_receita_total','DRE_Simplificada');
+        const resultado = pick(row,'percentual_resultado_operacional','DRE_Simplificada');
+        return {
+          bloco: pick(row,'bloco','DRE_Simplificada') || '',
+          linha: pick(row,'linha','DRE_Simplificada') || '',
+          valor_total: asNum(pick(row,'valor_total','DRE_Simplificada')),
+          valor_mensal: asNum(pick(row,'valor_mensal','DRE_Simplificada')),
+          percentual_receita_total: receita === undefined ? null : asNum(receita),
+          percentual_resultado_operacional: resultado === undefined ? null : asNum(resultado),
+          observacao: pick(row,'observacao','DRE_Simplificada') || ''
+        };
+      });
 
       const finalDRE = applySearch(dre);
       const cols = [
         {key:'linha',label:'Linha'},
         {key:'valor_total',label:'Valor Total',right:true,format:v=>BRL.format(asNum(v))},
-        {key:'perc_receita',label:'% Receita',right:true,format:v=>{
-          const val=asNum(v);
-          return Number.isFinite(val)?PCT.format(val):'—';
-        }}
+        {key:'valor_mensal',label:'Valor Mensal',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'percentual_receita_total',label:'% Receita',right:true,format:v=>formatPercentFraction(v)}
       ];
-      const hasPercLucro = dre.some(row=> row && Object.prototype.hasOwnProperty.call(row,'perc_resultado_liquido'));
+      const hasPercLucro = dre.some(row=> Number.isFinite(row.percentual_resultado_operacional));
       if(hasPercLucro){
-        cols.push({key:'perc_resultado_liquido',label:'% Lucro Líquido',right:true,format:v=>{
-          const val=asNum(v);
-          return Number.isFinite(val)?PCT.format(val):'—';
-        }});
+        cols.push({
+          key:'percentual_resultado_operacional',
+          label:'% Lucro Líquido',
+          right:true,
+          format:v=>formatPercentFraction(v)
+        });
       }
       const hasObs = dre.some(row=> row && (row.observacao!==undefined && String(row.observacao||'').trim()!==''));
       if(hasObs){
@@ -1122,9 +1141,54 @@
           const linha = String(row.linha||'').toLowerCase();
           if(linha.includes('margem') || linha.includes('resultado')) return 'row-highlight';
           return '';
-        }
+        },
+        metaSheet:'DRE_Simplificada'
       });
       statusBadge('DRE_Simplificada', raw.length>0);
+    }
+
+    function renderMargem(){
+      const totalEl = document.querySelector('#margem-total .value');
+      const mensalEl = document.querySelector('#margem-mensal .value');
+      const clienteEl = document.querySelector('#margem-cliente .value');
+      const clientesBadge = document.getElementById('margem-clientes-total');
+      if(!totalEl || !mensalEl || !clienteEl || !clientesBadge) return;
+
+      const base = state.datasets.margemContribuicao || [];
+      const margemColumns = [
+        {key:'margem_total',label:'Margem Total',exportType:'currency'},
+        {key:'margem_mensal',label:'Margem Mensal',exportType:'currency'},
+        {key:'clientes_total',label:'Clientes Totais',exportType:'number'},
+        {key:'margem_por_cliente',label:'Margem por Cliente (mensal)',exportType:'currency'}
+      ];
+      if(!base.length){
+        totalEl.textContent = '—';
+        mensalEl.textContent = '—';
+        clienteEl.textContent = '—';
+        clientesBadge.textContent = '— clientes';
+        registerTableData('cardMargem', margemColumns, [], 'DRE_Margem_Contribuicao');
+        statusBadge('DRE_Margem_Contribuicao', false);
+        return;
+      }
+
+      const registro = base[0];
+      const total = asNum(registro.margem_total);
+      const mensal = asNum(registro.margem_mensal);
+      const clientesRaw = asNum(registro.clientes_total);
+      const clientes = Math.max(0, Math.floor(clientesRaw));
+      const porCliente = asNum(registro.margem_por_cliente);
+
+      totalEl.textContent = BRL.format(total);
+      mensalEl.textContent = BRL.format(mensal);
+      clienteEl.textContent = BRL.format(porCliente);
+      clientesBadge.textContent = `${INT.format(clientes)} clientes`;
+      registerTableData('cardMargem', margemColumns, [{
+        margem_total: total,
+        margem_mensal: mensal,
+        clientes_total: clientesRaw,
+        margem_por_cliente: porCliente
+      }], 'DRE_Margem_Contribuicao');
+      statusBadge('DRE_Margem_Contribuicao', true);
     }
 
     function renderValidations(){
@@ -1222,15 +1286,74 @@
 
     function renderAll(){
       renderHero();
-      renderResultadoRegime();
+      renderResultado();
       renderROI();
-      renderSegmentos();
       renderTickets();
       renderTopClientes();
       renderTopDespesas();
-      renderResumo();
       renderDRE();
+      renderMargem();
       renderValidations();
+    }
+
+    function resolveColumnType(metaSheet, column){
+      if(column.exportType) return column.exportType;
+      if(!metaSheet) return '';
+      const schema = schemas[metaSheet];
+      if(!schema) return '';
+      const key = normalizeKey(column.key || column.label || '');
+      const entry = schema.lookup[key];
+      if(!entry) return '';
+      const tipo = String(entry.tipo||'').toLowerCase();
+      if(tipo.includes('percent')) return 'percent';
+      if(tipo.includes('moeda') || tipo.includes('currency')) return 'currency';
+      if(tipo.includes('valor') || tipo.includes('numero') || tipo.includes('quantidade') || tipo.includes('qtd') || tipo.includes('inteiro')) return 'number';
+      if(tipo.includes('texto') || tipo.includes('descricao')) return 'string';
+      return '';
+    }
+
+    function toNumberMaybe(value, typeHint){
+      if(value===null || value===undefined) return {valid:false};
+      if(typeof value==='number' && Number.isFinite(value)){
+        return {valid:true,value};
+      }
+      if(typeof value!=='string') return {valid:false};
+      const trimmed=value.trim();
+      if(!trimmed) return {valid:false};
+      const cleaned = trimmed.replace(/\u00a0/g,'').replace(/[^0-9,\.\-]/g,'');
+      if(!/[0-9]/.test(cleaned)) return {valid:false};
+      const percent = /%/.test(trimmed);
+      let prepared = cleaned;
+      if(cleaned.includes(',')){
+        prepared = cleaned.replace(/\./g,'').replace(',','.');
+      }
+      const num=Number(prepared);
+      if(!Number.isFinite(num)) return {valid:false};
+      if(typeHint==='percent' || percent){
+        const valuePct = percent ? num/100 : num;
+        return {valid:true,value:valuePct};
+      }
+      return {valid:true,value:num};
+    }
+
+    function csvEscape(text){
+      return `"${String(text).replace(/"/g,'""')}"`;
+    }
+
+    function serializeCsvValue(raw, column, metaSheet){
+      if(raw===null || raw===undefined) return '';
+      const typeHint = resolveColumnType(metaSheet, column);
+      if(typeof raw==='number'){
+        return Number.isFinite(raw) ? raw : '';
+      }
+      if(typeHint==='string'){
+        return csvEscape(raw);
+      }
+      const numResult = toNumberMaybe(String(raw), typeHint);
+      if(numResult.valid){
+        return numResult.value;
+      }
+      return csvEscape(raw);
     }
 
     function exportCsv(targetId){
@@ -1239,15 +1362,13 @@
         showToast('Sem dados para exportar.', 'error');
         return;
       }
-      const {columns,rows}=table;
-      const header=columns.map(c=>`"${(c.label||c.key||'').replace(/"/g,'""')}"`).join(';');
+      const {columns,rows,metaSheet}=table;
+      const header=columns.map(c=>csvEscape(c.label||c.key||''));
       const lines=rows.map(row=>columns.map(c=>{
         const raw = c.export ? c.export(row[c.key], row) : row[c.key];
-        if(raw===null||raw===undefined) return '';
-        if(typeof raw==='number') return raw;
-        return `"${String(raw).replace(/"/g,'""')}"`;
+        return serializeCsvValue(raw, c, metaSheet||null);
       }).join(';'));
-      const csv=[header,...lines].join('\n');
+      const csv=[header.join(';'),...lines].join('\n');
       const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
       const url=URL.createObjectURL(blob);
       const a=document.createElement('a');
@@ -1264,9 +1385,13 @@
       try{
         const sheetStatus=validateWorkbook(wb);
         state.wb=wb;
+        schemas = buildSchemas(wb);
         state.sheetStatus=sheetStatus;
         state.filters={segmentRegime:null,ticketRegime:null};
         state.searchTerm='';
+        state.resultadoView='regime';
+        state.ticketView='regime';
+        Object.keys(TABLE_CACHE).forEach(k=> delete TABLE_CACHE[k]);
 
         const S = getSheets(wb);
         window._S = S;
@@ -1290,7 +1415,7 @@
         const tkRegAtividade = rowsTicketRegimeAtividade(S.tra);
         const tkClientes = rowsTicketClientes(S.tc);
         const topG = rowsTopDespesas(S.td);
-        const topAdm = rowsTopDespesasAdm(S.tda);
+        const margem = rowsMargemContribuicao(S.mc);
 
         state.datasets={
           resultadoRegimeComPeso:rrCom,
@@ -1299,8 +1424,7 @@
           ticketRegimeAtividade:tkRegAtividade,
           ticketClientes:tkClientes,
           topDespesas:topG,
-          topDespesasAdm:topAdm,
-          resumoRetirada:S.rr,
+          margemContribuicao:margem,
           dre:S.dre
         };
 
@@ -1328,6 +1452,9 @@
           btn.dataset.bound='true';
           btn.addEventListener('click',()=>exportCsv(btn.getAttribute('data-export')));
         });
+
+        bindResultadoToggles();
+        bindTicketTabs();
 
         document.querySelectorAll('[data-excel]').forEach(btn=>{
           if(btn.dataset.bound) return;
