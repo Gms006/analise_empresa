@@ -1147,30 +1147,84 @@
       return PCT.format(num);
     }
 
+    function normalizeLabel(value){
+      return String(value||'')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g,'')
+        .toLowerCase();
+    }
+
     function renderDRE(){
       const raw = state.S?.dre || [];
-      const dre = (raw||[]).map(row=>{
+      const lucroLiquidoRow = (raw||[]).find(row=>{
+        const linha = pick(row,'linha','DRE_Simplificada');
+        const normalized = normalizeLabel(linha);
+        return normalized.includes('resultado operacional') && normalized.includes('liquido');
+      });
+      const lucroLiquidoTotal = lucroLiquidoRow ? asNum(pick(lucroLiquidoRow,'valor_total','DRE_Simplificada')) : null;
+
+      const mapped = (raw||[]).map(row=>{
+        const linha = pick(row,'linha','DRE_Simplificada') || '';
+        const blocoOriginal = pick(row,'bloco','DRE_Simplificada') || '';
+        const valorTotal = asNum(pick(row,'valor_total','DRE_Simplificada'));
+        const valorMensal = asNum(pick(row,'valor_mensal','DRE_Simplificada'));
         const receita = pick(row,'percentual_receita_total','DRE_Simplificada');
         const resultado = pick(row,'percentual_resultado_operacional','DRE_Simplificada');
+        const normalizedLine = normalizeLabel(linha);
+        const isRetirada = normalizedLine.includes('retirada') || normalizedLine.includes('pro-labore');
+        const isResultadoLiquido = normalizedLine.includes('resultado operacional') && normalizedLine.includes('liquido');
+        let percLucro = null;
+        if(isRetirada){
+          if(Number.isFinite(lucroLiquidoTotal) && lucroLiquidoTotal!==0 && Number.isFinite(valorTotal)){
+            percLucro = valorTotal / lucroLiquidoTotal;
+          } else if(resultado !== undefined) {
+            const numResultado = asNum(resultado);
+            percLucro = Number.isFinite(numResultado) ? numResultado : null;
+          }
+        }
         return {
-          bloco: pick(row,'bloco','DRE_Simplificada') || '',
-          linha: pick(row,'linha','DRE_Simplificada') || '',
-          valor_total: asNum(pick(row,'valor_total','DRE_Simplificada')),
-          valor_mensal: asNum(pick(row,'valor_mensal','DRE_Simplificada')),
-          percentual_receita_total: receita === undefined ? null : asNum(receita),
-          percentual_resultado_operacional: resultado === undefined ? null : asNum(resultado),
-          observacao: pick(row,'observacao','DRE_Simplificada') || ''
+          bloco: isRetirada ? 'Distribuição do Resultado / Lucro' : blocoOriginal,
+          linha,
+          valor_total: valorTotal,
+          valor_mensal: valorMensal,
+          percentual_receita_total: isRetirada ? null : (receita === undefined ? null : asNum(receita)),
+          percentual_resultado_operacional: percLucro,
+          observacao: pick(row,'observacao','DRE_Simplificada') || '',
+          _isRetirada: isRetirada,
+          _isResultadoLiquido: isResultadoLiquido
         };
       });
 
-      const finalDRE = applySearch(dre);
+      const retiradas = mapped.filter(row=>row._isRetirada);
+      const demais = mapped.filter(row=>!row._isRetirada);
+      const ordered = [];
+      let retiradasInseridas = false;
+      demais.forEach(row=>{
+        const { _isRetirada, _isResultadoLiquido, ...rest } = row;
+        ordered.push(rest);
+        if(!retiradasInseridas && _isResultadoLiquido){
+          retiradas.forEach(ret=>{
+            const { _isRetirada: __, _isResultadoLiquido: ___, ...retRest } = ret;
+            ordered.push(retRest);
+          });
+          retiradasInseridas = true;
+        }
+      });
+      if(!retiradasInseridas && retiradas.length){
+        retiradas.forEach(ret=>{
+          const { _isRetirada: __, _isResultadoLiquido: ___, ...retRest } = ret;
+          ordered.push(retRest);
+        });
+      }
+
+      const finalDRE = applySearch(ordered);
       const cols = [
         {key:'linha',label:'Linha'},
         {key:'valor_total',label:'Valor Total',right:true,format:v=>BRL.format(asNum(v))},
         {key:'valor_mensal',label:'Valor Mensal',right:true,format:v=>BRL.format(asNum(v))},
         {key:'percentual_receita_total',label:'% Receita',right:true,format:v=>formatPercentFraction(v)}
       ];
-      const hasPercLucro = dre.some(row=> Number.isFinite(row.percentual_resultado_operacional));
+      const hasPercLucro = ordered.some(row=> Number.isFinite(row.percentual_resultado_operacional));
       if(hasPercLucro){
         cols.push({
           key:'percentual_resultado_operacional',
@@ -1179,7 +1233,7 @@
           format:v=>formatPercentFraction(v)
         });
       }
-      const hasObs = dre.some(row=> row && (row.observacao!==undefined && String(row.observacao||'').trim()!==''));
+      const hasObs = ordered.some(row=> row && (row.observacao!==undefined && String(row.observacao||'').trim()!==''));
       if(hasObs){
         cols.push({key:'observacao',label:'Observações'});
       }
