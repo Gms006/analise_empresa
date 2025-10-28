@@ -215,6 +215,26 @@
       <div id="tabRegimeComPeso"></div>
     </section>
 
+    <section class="card" style="margin-top:16px">
+      <div class="card-header">
+        <h2 style="margin:0">ROI por Regime</h2>
+        <div class="card-actions">
+          <button class="btn-sm" data-export="tabROI">⬇️ Exportar CSV</button>
+        </div>
+      </div>
+      <div id="tabROI"></div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <div class="card-header">
+        <h2 style="margin:0">Top 20 Clientes Contribuintes (Curva ABC)</h2>
+        <div class="card-actions">
+          <button class="btn-sm" data-export="tabTopClientes">⬇️ Exportar CSV</button>
+        </div>
+      </div>
+      <div id="tabTopClientes"></div>
+    </section>
+
     <div class="grid cols-2" style="margin-top:16px">
       <section class="card" id="card-segmento">
         <div class="card-header">
@@ -411,6 +431,18 @@
           'total_prolabores'
         ],
         observacao:['observacao','obs','observacoes']
+      },
+      DRE_Simplificada:{
+        bloco:['bloco'],
+        linha:['linha','descricao'],
+        valor_total:['valor_total','valor'],
+        perc_receita:['perc_receita','percentual_receita_total','perc_receita_total'],
+        perc_resultado_liquido:[
+          'perc_resultado_liquido',
+          'percentual_resultado_operacional',
+          'perc_resultado_operacional'
+        ],
+        observacao:['observacao','obs']
       }
     };
 
@@ -864,6 +896,75 @@
       statusBadge('Resultado_Regime_Com_Peso', hasCom);
     }
 
+    function renderROI(){
+      const regimes = applySearch(state.datasets.resultadoRegimeComPeso||[]);
+      const roiData = regimes.map(r=>({
+        regime: r.regime,
+        receita: asNum(r.receita),
+        custo: asNum(r.custo),
+        resultado: asNum(r.resultado),
+        roi: asNum(r.custo) > 0 ? (asNum(r.resultado) / asNum(r.custo)) : 0,
+        margem: asNum(r.margem)
+      })).sort((a,b)=> b.roi - a.roi);
+
+      tableFromData('tabROI', [
+        {key:'regime',label:'Regime'},
+        {key:'receita',label:'Receita',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'custo',label:'Custo',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'resultado',label:'Resultado',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'roi',label:'ROI',right:true,format:v=>{
+          const val=asNum(v);
+          const color = val>=0.3 ? 'positive' : (val>=0 ? '' : 'negative');
+          return `<span class="pill ${color}">${DEC.format(val)}x</span>`;
+        },export:v=>asNum(v)},
+        {key:'margem',label:'Margem',right:true,format:v=>PCT.format(asNum(v))}
+      ], roiData);
+    }
+
+    function renderTopClientes(){
+      const filterByRegime = row=> !state.filters.ticketRegime || row.regime === state.filters.ticketRegime;
+      const base = applySearch((state.datasets.ticketClientes||[]).filter(filterByRegime));
+      const clientes = base
+        .map(c=>({
+          rank: c.rank,
+          cliente: c.cliente,
+          regime: c.regime,
+          ticket: asNum(c.ticket),
+          receita: asNum(c.receita_mensal)
+        }))
+        .sort((a,b)=> b.receita - a.receita)
+        .slice(0,20);
+
+      const totalReceita = sum(clientes, c=> c.receita);
+      let acumulado = 0;
+
+      const clientesComAcum = clientes.map(c=>{
+        acumulado += c.receita;
+        const percAcum = totalReceita > 0 ? acumulado / totalReceita : 0;
+        return {
+          ...c,
+          perc_individual: totalReceita > 0 ? c.receita / totalReceita : 0,
+          perc_acumulado: percAcum,
+          classe_abc: percAcum <= 0.8 ? 'A' : (percAcum <= 0.95 ? 'B' : 'C')
+        };
+      });
+
+      tableFromData('tabTopClientes', [
+        {key:'rank',label:'#',right:true},
+        {key:'cliente',label:'Cliente'},
+        {key:'regime',label:'Regime'},
+        {key:'receita',label:'Receita Mensal',right:true,format:v=>BRL.format(asNum(v))},
+        {key:'perc_individual',label:'% Individual',right:true,format:v=>PCT.format(asNum(v))},
+        {key:'perc_acumulado',label:'% Acumulado',right:true,format:v=>PCT.format(asNum(v))},
+        {key:'classe_abc',label:'Classe ABC',right:true,format:v=>{
+          const color = v==='A' ? 'ok' : (v==='B' ? 'warn' : '');
+          return `<span class="badge ${color}">${v}</span>`;
+        }}
+      ], clientesComAcum, {
+        getRowClass: row => row.classe_abc === 'A' ? 'row-highlight' : ''
+      });
+    }
+
     function renderSegmentos(){
       const rows = state.datasets.resultadoSegmentoComPeso||[];
       const filtered = rows.filter(row=> !state.filters.segmentRegime || row.regime===state.filters.segmentRegime);
@@ -986,7 +1087,17 @@
     }
 
     function renderDRE(){
-      const dre = applySearch(state.datasets.dre||[]);
+      const raw = state.S?.dre || [];
+      const dre = (raw||[]).map(row=>({
+        bloco: pick(row,'bloco','DRE_Simplificada') || '',
+        linha: pick(row,'linha','DRE_Simplificada') || '',
+        valor_total: asNum(pick(row,'valor_total','DRE_Simplificada')),
+        perc_receita: asNum(pick(row,'perc_receita','DRE_Simplificada')),
+        perc_resultado_liquido: asNum(pick(row,'perc_resultado_liquido','DRE_Simplificada')),
+        observacao: pick(row,'observacao','DRE_Simplificada') || ''
+      }));
+
+      const finalDRE = applySearch(dre);
       const cols = [
         {key:'linha',label:'Linha'},
         {key:'valor_total',label:'Valor Total',right:true,format:v=>BRL.format(asNum(v))},
@@ -1006,14 +1117,14 @@
       if(hasObs){
         cols.push({key:'observacao',label:'Observações'});
       }
-      tableFromData('tabDRE',cols, dre, {
+      tableFromData('tabDRE',cols, finalDRE, {
         getRowClass:(row)=>{
           const linha = String(row.linha||'').toLowerCase();
           if(linha.includes('margem') || linha.includes('resultado')) return 'row-highlight';
           return '';
         }
       });
-      statusBadge('DRE_Simplificada', (state.datasets.dre||[]).length>0);
+      statusBadge('DRE_Simplificada', raw.length>0);
     }
 
     function renderValidations(){
@@ -1112,8 +1223,10 @@
     function renderAll(){
       renderHero();
       renderResultadoRegime();
+      renderROI();
       renderSegmentos();
       renderTickets();
+      renderTopClientes();
       renderTopDespesas();
       renderResumo();
       renderDRE();

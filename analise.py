@@ -812,6 +812,11 @@ def carrega_despesas_v2(caminho: Path, log: List[str]) -> pd.DataFrame:
     df_norm['departamento_classificado'] = ""
     df_norm['departamento_final'] = ""
     df_norm['fuzzy_score'] = 0.0
+    df_norm['is_conta_redutora'] = df_norm['item_nome'].str.contains(
+        'REDUTORA',
+        case=False,
+        na=False,
+    )
 
     mask_trab = df_norm['tipo_despesa'] == 'DESPESA TRABALHISTA'
     if mask_trab.any():
@@ -1706,7 +1711,12 @@ def gera_top_despesas(df_despesas: pd.DataFrame, top_n: int = 10):
     else:
         mask_prolab = pd.Series([False] * len(df_despesas), index=df_despesas.index)
 
-    base_desp = df_despesas.loc[~mask_prolab].copy()
+    if 'is_conta_redutora' in df_despesas.columns:
+        mask_redutora = df_despesas['is_conta_redutora'].fillna(False)
+    else:
+        mask_redutora = pd.Series([False] * len(df_despesas), index=df_despesas.index)
+
+    base_desp = df_despesas.loc[~mask_prolab & ~mask_redutora].copy()
 
     if base_desp.empty:
         return pd.DataFrame(columns=['rank', 'tipo_despesa', 'item_nome', 'valor', 'perc_total_despesas', 'perc_no_tipo'])
@@ -1778,7 +1788,22 @@ def _aplica_visao_com_peso(
         custos_adm_liquidos = total_trabalhistas = total_tributarias = total_financeiras = total_bancarias = 0.0
     else:
         grupos = df_despesas_rateado.groupby('tipo_despesa')['valor'].sum()
-        custos_adm_liquidos = float(grupos.get('DESPESA ADMINISTRATIVA', 0.0))
+
+        mask_adm = df_despesas_rateado['tipo_despesa'] == 'DESPESA ADMINISTRATIVA'
+        if 'is_conta_redutora' in df_despesas_rateado.columns:
+            serie_redutora = df_despesas_rateado['is_conta_redutora'].fillna(False)
+        else:
+            serie_itens = df_despesas_rateado.get(
+                'item_nome',
+                pd.Series('', index=df_despesas_rateado.index),
+            )
+            serie_redutora = serie_itens.astype(str).str.contains('REDUTORA', case=False, na=False)
+        mask_redutora = mask_adm & serie_redutora
+
+        custos_adm_brutos = df_despesas_rateado.loc[mask_adm & ~mask_redutora, 'valor'].sum()
+        valor_redutora = df_despesas_rateado.loc[mask_redutora, 'valor'].sum()
+        custos_adm_liquidos = float(custos_adm_brutos - abs(valor_redutora))
+
         total_trabalhistas = float(grupos.get('DESPESA TRABALHISTA', 0.0))
         total_tributarias = float(grupos.get('DESPESA TRIBUTÁRIA', 0.0))
         total_financeiras = float(grupos.get('DESPESA FINANCEIRA', 0.0))
@@ -1939,33 +1964,33 @@ def gerar_dre(
     receita_total = receita_operacional_bruta + receita_financeira
 
     if df_despesas_operacionais.empty:
-        totais = {
-            'DESPESA ADMINISTRATIVA': 0.0,
-            'DESPESA TRABALHISTA': 0.0,
-            'DESPESA TRIBUTÁRIA': 0.0,
-            'DESPESA FINANCEIRA': 0.0,
-            'DESPESA BANCÁRIA': 0.0,
-        }
+        grupos = {}
+        despesas_adm_bruta = 0.0
+        despesas_adm_redutora = 0.0
     else:
-        totais = df_despesas_operacionais.groupby('tipo_despesa')['valor'].sum().to_dict()
+        grupos = df_despesas_operacionais.groupby('tipo_despesa')['valor'].sum()
 
-    despesas_adm = float(totais.get('DESPESA ADMINISTRATIVA', 0.0))
-    despesas_trab = float(totais.get('DESPESA TRABALHISTA', 0.0))
-    despesas_trib = float(totais.get('DESPESA TRIBUTÁRIA', 0.0))
-    despesas_fin = float(totais.get('DESPESA FINANCEIRA', 0.0))
-    despesas_banc = float(totais.get('DESPESA BANCÁRIA', 0.0))
-
-    despesas_adm_redutora = 0.0
-    despesas_adm_sem_redutora = despesas_adm
-    if not df_despesas_operacionais.empty:
         mask_admin = df_despesas_operacionais['tipo_despesa'] == 'DESPESA ADMINISTRATIVA'
-        mask_redutora = mask_admin & df_despesas_operacionais['item_nome'].str.contains('REDUTORA', case=False, na=False)
-        despesas_adm_redutora = float(df_despesas_operacionais.loc[mask_redutora, 'valor'].sum())
-        despesas_adm_sem_redutora = float(
+        if 'is_conta_redutora' in df_despesas_operacionais.columns:
+            serie_redutora = df_despesas_operacionais['is_conta_redutora'].fillna(False)
+        else:
+            serie_itens = df_despesas_operacionais.get(
+                'item_nome',
+                pd.Series('', index=df_despesas_operacionais.index),
+            )
+            serie_redutora = serie_itens.astype(str).str.contains('REDUTORA', case=False, na=False)
+        mask_redutora = mask_admin & serie_redutora
+
+        despesas_adm_redutora = abs(df_despesas_operacionais.loc[mask_redutora, 'valor'].sum())
+        despesas_adm_bruta = float(
             df_despesas_operacionais.loc[mask_admin & ~mask_redutora, 'valor'].sum()
         )
-    else:
-        despesas_adm_sem_redutora = 0.0
+
+    despesas_adm = float(despesas_adm_bruta - despesas_adm_redutora)
+    despesas_trab = float(grupos.get('DESPESA TRABALHISTA', 0.0))
+    despesas_trib = float(grupos.get('DESPESA TRIBUTÁRIA', 0.0))
+    despesas_fin = float(grupos.get('DESPESA FINANCEIRA', 0.0))
+    despesas_banc = float(grupos.get('DESPESA BANCÁRIA', 0.0))
 
     total_despesas_operacionais = despesas_adm + despesas_trab + despesas_trib + despesas_fin + despesas_banc
     resultado_operacional = receita_operacional_bruta - total_despesas_operacionais
@@ -2042,7 +2067,7 @@ def gerar_dre(
     if prolabores_total:
         observacao_admin_partes.append(f"Inclui pró-labores: R$ {prolabores_total:,.2f}")
     if despesas_adm_redutora:
-        observacao_admin_partes.append(f"Base bruta: R$ {despesas_adm_sem_redutora:,.2f}")
+        observacao_admin_partes.append(f"Base bruta: R$ {despesas_adm_bruta:,.2f}")
     observacao_admin = " | ".join(observacao_admin_partes)
 
     linhas.append({
@@ -2156,12 +2181,20 @@ def gerar_dre(
         },
     ])
 
-    return pd.DataFrame(linhas)[[
+    df_dre = pd.DataFrame(linhas)
+    df_dre = df_dre.rename(columns={
+        'descricao': 'linha',
+        'valor': 'valor_total',
+        'percentual_receita_total': 'perc_receita',
+        'percentual_resultado_operacional': 'perc_resultado_liquido',
+    })
+
+    return df_dre[[
         'bloco',
-        'descricao',
-        'valor',
-        'percentual_receita_total',
-        'percentual_resultado_operacional',
+        'linha',
+        'valor_total',
+        'perc_receita',
+        'perc_resultado_liquido',
         'observacao',
     ]]
 
