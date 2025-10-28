@@ -137,6 +137,18 @@ MARGEM_VARIAVEIS_TIPOS: List[str] = list(CONFIG.margem_variaveis_tipos)
 TOL_OK = 0.0001   # 0,01%
 TOL_WARN = 0.001  # 0,1%
 
+
+def _perc_receita(valor: float, receita_total: float) -> float:
+    return (valor / receita_total) if receita_total else 0.0
+
+
+def _perc_resultado_so_para_retirada(
+    valor: float, resultado_operacional: float, *, habilitar: bool
+) -> float | None:
+    if not habilitar or not resultado_operacional:
+        return None
+    return valor / resultado_operacional
+
 # ============================================================================
 # INFRAESTRUTURA DE PROCESSAMENTO
 # ============================================================================
@@ -300,14 +312,6 @@ class CalculadoraFinanceira:
             res[tipo] = float(bruto) - abs(float(redutora))
         return res
 
-    def _percentual_receita(self, valor: float, receita_total: float) -> float:
-        return (valor / receita_total) if receita_total else 0.0
-
-    def _percentual_resultado(self, valor: float, resultado_operacional: float) -> Optional[float]:
-        if resultado_operacional == 0:
-            return None
-        return valor / resultado_operacional
-
     def gerar_dre(
         self,
         receita_honorarios: float,
@@ -319,178 +323,274 @@ class CalculadoraFinanceira:
         receita_certificados = float(receita_certificados or 0.0)
         receita_financeira = float(receita_financeira or 0.0)
 
+        meses = float(self.meses_acumulados or 1)
+
         receita_operacional_bruta = receita_honorarios + receita_certificados
         receita_total = receita_operacional_bruta + receita_financeira
 
-        despesas_liquidas = self.calcular_custos_liquidos(df_despesas_operacionais)
-        despesas_adm = float(despesas_liquidas.get('ADMINISTRATIVA', 0.0))
-        despesas_trab = float(despesas_liquidas.get('TRABALHISTA', 0.0))
-        despesas_trib = float(despesas_liquidas.get('TRIBUTÁRIA', 0.0))
-        despesas_fin = float(despesas_liquidas.get('FINANCEIRA', 0.0))
-        despesas_banc = float(despesas_liquidas.get('BANCÁRIA', 0.0))
-
-        total_despesas_operacionais = (
-            despesas_adm + despesas_trab + despesas_trib + despesas_fin + despesas_banc
-        )
-        resultado_operacional = receita_total - total_despesas_operacionais
-        resultado_liquido = resultado_operacional
-
-        despesas_adm_bruta = despesas_adm
-        despesas_adm_redutora = 0.0
-        prolabores_total = 0.0
-        detalhes_prolabore: List[str] = []
-
-        if df_despesas_operacionais is not None and not df_despesas_operacionais.empty:
+        if df_despesas_operacionais is None or df_despesas_operacionais.empty:
+            df_base = pd.DataFrame(columns=['valor'])
+        else:
             df_base = df_despesas_operacionais.copy()
-            df_base['tipo_despesa'] = df_base.get('tipo_despesa', '').astype(str)
 
-            serie_redutora = df_base.get('is_conta_redutora')
-            if serie_redutora is None:
-                serie_redutora = pd.Series([False] * len(df_base), index=df_base.index)
-            serie_redutora = serie_redutora.fillna(False).astype(bool)
+        df_base['valor'] = pd.to_numeric(df_base.get('valor', 0.0), errors='coerce').fillna(0.0)
 
-            mask_admin = df_base['tipo_despesa'] == 'DESPESA ADMINISTRATIVA'
-            despesas_adm_bruta = float(df_base.loc[mask_admin & ~serie_redutora, 'valor'].sum())
-            despesas_adm_redutora = abs(float(df_base.loc[mask_admin & serie_redutora, 'valor'].sum()))
+        tipo_col = None
+        for candidato in ['tipo', 'tipo_despesa', 'grupo']:
+            if candidato in df_base.columns:
+                tipo_col = candidato
+                break
 
-            serie_prolabore = df_base.get('is_prolabore')
-            if serie_prolabore is None:
-                serie_prolabore = pd.Series([False] * len(df_base), index=df_base.index)
-            serie_prolabore = serie_prolabore.fillna(False).astype(bool)
-
-            if serie_prolabore.any():
-                df_prolab = df_base.loc[serie_prolabore].copy()
-                prolabores_total = float(df_prolab['valor'].sum())
-                for _, linha in df_prolab.iterrows():
-                    nome = str(linha.get('item_nome', '')).strip()
-                    valor = float(linha.get('valor', 0.0))
-                    if nome:
-                        detalhes_prolabore.append(f"• {nome.upper()}  R$ {valor:,.2f}")
-
-        observacao_admin_partes: List[str] = []
-        if prolabores_total:
-            observacao_admin_partes.append(f"Inclui pró-labores: R$ {prolabores_total:,.2f}")
-        if despesas_adm_redutora:
-            observacao_admin_partes.append(f"Base bruta: R$ {despesas_adm_bruta:,.2f}")
-        observacao_admin = " | ".join(observacao_admin_partes)
-
-        linhas: List[Dict[str, object]] = []
-
-        def adicionar_linha(
-            bloco: str,
-            descricao: str,
-            valor: float,
-            *,
-            incluir_resultado: bool = False,
-            observacao: str = "",
-        ) -> None:
-            percentual_receita = self._percentual_receita(valor, receita_total)
-            percentual_resultado = (
-                self._percentual_resultado(valor, resultado_operacional)
-                if incluir_resultado
-                else None
+        if tipo_col is not None:
+            tipos_norm = (
+                df_base[tipo_col]
+                .astype(str)
+                .str.upper()
+                .str.strip()
+                .str.replace('DESPESA ', '', regex=False)
+                .str.replace('DESPESAS ', '', regex=False)
+                .str.replace('CUSTO ', '', regex=False)
             )
+        else:
+            tipos_norm = pd.Series([''] * len(df_base), index=df_base.index)
+
+        tipos_norm_ascii = tipos_norm.apply(
+            lambda texto: normaliza_texto(str(texto), remover_acentos=True, minuscula=True)
+            if texto else ''
+        )
+
+        df_base = df_base.assign(_tipo_norm=tipos_norm, _tipo_norm_ascii=tipos_norm_ascii)
+
+        if 'is_prolabore' in df_base.columns:
+            serie_pro = df_base['is_prolabore'].fillna(False).astype(bool)
+        else:
+            serie_pro = pd.Series(False, index=df_base.index)
+
+        df_pro = df_base.loc[serie_pro].copy()
+        valor_prolabore = float(df_pro['valor'].sum()) if not df_pro.empty else 0.0
+
+        df_sem_pro = df_base.loc[~serie_pro].copy()
+
+        mask_admin = df_sem_pro['_tipo_norm_ascii'].str.contains('administrativa', na=False)
+        df_adm = df_sem_pro.loc[mask_admin].copy()
+
+        if 'is_conta_redutora' in df_adm.columns:
+            serie_red = df_adm['is_conta_redutora'].fillna(False).astype(bool)
+        else:
+            serie_red = pd.Series(False, index=df_adm.index)
+
+        adm_bruto = float(df_adm.loc[~serie_red, 'valor'].sum()) if not df_adm.empty else 0.0
+        adm_redutora_raw = float(df_adm.loc[serie_red, 'valor'].sum()) if not df_adm.empty else 0.0
+        adm_redutora = abs(adm_redutora_raw)
+        adm_liquida = adm_bruto + adm_redutora
+
+        obs_adm = f"Base bruta: {adm_bruto:,.2f}; Redutora: {adm_redutora:,.2f}"
+
+        df_sem_pro_sem_adm = df_sem_pro.loc[~mask_admin].copy()
+
+        def somar_tipo(keyword: str) -> float:
+            return float(
+                df_sem_pro_sem_adm.loc[
+                    df_sem_pro_sem_adm['_tipo_norm_ascii'].str.contains(keyword, na=False),
+                    'valor',
+                ].sum()
+            )
+
+        desp_trab = somar_tipo('trabalhista')
+        desp_trib = somar_tipo('tributaria')
+        desp_fin = somar_tipo('financeira')
+        desp_banc = somar_tipo('bancaria')
+
+        linhas: List[Tuple[str, str, float, float, Optional[float], Optional[float], str]] = []
+
+        rec_honor = receita_honorarios
+        rec_certif = receita_certificados
+        rec_fin = receita_financeira
+        rec_op = receita_operacional_bruta
+
+        linhas.append(
+            (
+                '1. RECEITA BRUTA',
+                'Receita com Honorários Contábeis',
+                rec_honor,
+                rec_honor / meses,
+                _perc_receita(rec_honor, receita_total),
+                None,
+                '',
+            )
+        )
+        linhas.append(
+            (
+                '1. RECEITA BRUTA',
+                'Receita com Certificados Digitais',
+                rec_certif,
+                rec_certif / meses,
+                _perc_receita(rec_certif, receita_total),
+                None,
+                '',
+            )
+        )
+        linhas.append(
+            (
+                '1. RECEITA BRUTA',
+                '(=) RECEITA OPERACIONAL BRUTA',
+                rec_op,
+                rec_op / meses,
+                _perc_receita(rec_op, receita_total),
+                None,
+                '',
+            )
+        )
+        linhas.append(
+            (
+                '2. RECEITAS FINANCEIRAS',
+                'Juros, Rendimentos e Receitas Financeiras',
+                rec_fin,
+                rec_fin / meses,
+                _perc_receita(rec_fin, receita_total),
+                None,
+                '',
+            )
+        )
+        linhas.append(
+            (
+                '2. RECEITAS FINANCEIRAS',
+                '(=) RECEITA TOTAL',
+                receita_total,
+                receita_total / meses,
+                1.0 if receita_total else 0.0,
+                None,
+                '',
+            )
+        )
+
+        linhas.append(
+            (
+                '3. DESPESAS OPERACIONAIS',
+                '(-) Despesas Administrativas',
+                adm_liquida,
+                adm_liquida / meses,
+                _perc_receita(adm_liquida, receita_total),
+                None,
+                obs_adm,
+            )
+        )
+        linhas.append(
+            (
+                '3.1',
+                'Despesas Administrativas',
+                adm_bruto,
+                adm_bruto / meses,
+                None,
+                None,
+                '',
+            )
+        )
+        linhas.append(
+            (
+                '3.2',
+                '(-) REDUTORA DE ADMINISTRATIVA',
+                adm_redutora,
+                adm_redutora / meses,
+                None,
+                None,
+                '',
+            )
+        )
+
+        def add_desp(bloco: str, rotulo: str, valor: float) -> None:
             linhas.append(
-                {
-                    'bloco': bloco,
-                    'linha': descricao,
-                    'valor_total': valor,
-                    'valor_mensal': valor / self.meses_acumulados,
-                    'percentual_receita_total': percentual_receita,
-                    'percentual_resultado_operacional': percentual_resultado,
-                    'observacao': observacao,
-                }
+                (
+                    bloco,
+                    rotulo,
+                    valor,
+                    valor / meses,
+                    _perc_receita(valor, receita_total),
+                    None,
+                    '',
+                )
             )
 
-        adicionar_linha(
-            '1. RECEITA BRUTA',
-            'Receita com Honorários Contábeis',
-            receita_honorarios,
-            incluir_resultado=True,
-        )
-        adicionar_linha(
-            '1. RECEITA BRUTA',
-            'Receita com Certificados Digitais',
-            receita_certificados,
-            incluir_resultado=True,
-        )
-        adicionar_linha(
-            '1. RECEITA BRUTA',
-            '(=) RECEITA OPERACIONAL BRUTA',
-            receita_operacional_bruta,
-            incluir_resultado=True,
-        )
-        adicionar_linha(
-            '2. RECEITAS FINANCEIRAS',
-            'Juros, Rendimentos e Receitas Financeiras',
-            receita_financeira,
-            incluir_resultado=True,
-        )
-        adicionar_linha(
-            '2. RECEITAS FINANCEIRAS',
-            '(=) RECEITA TOTAL',
-            receita_total,
-            incluir_resultado=True,
+        add_desp('3. DESPESAS OPERACIONAIS', '(-) Despesas Trabalhistas Rateadas', desp_trab)
+        add_desp('3. DESPESAS OPERACIONAIS', '(-) Despesas Tributárias', desp_trib)
+        add_desp('3. DESPESAS OPERACIONAIS', '(-) Despesas Financeiras', desp_fin)
+        add_desp('3. DESPESAS OPERACIONAIS', '(-) Despesas Bancárias', desp_banc)
+
+        resultado_operacional = receita_total + adm_liquida + desp_trab + desp_trib + desp_fin + desp_banc
+        linhas.append(
+            (
+                '3. DESPESAS OPERACIONAIS',
+                '(=) RESULTADO OPERACIONAL',
+                resultado_operacional,
+                resultado_operacional / meses,
+                _perc_receita(resultado_operacional, receita_total),
+                None,
+                '',
+            )
         )
 
-        adicionar_linha(
-            '3. DESPESAS OPERACIONAIS',
-            '(-) Despesas Administrativas',
-            -despesas_adm,
-            observacao=observacao_admin,
-        )
-        adicionar_linha(
-            '3. DESPESAS OPERACIONAIS',
-            '(-) Despesas Trabalhistas Rateadas',
-            -despesas_trab,
-        )
-        adicionar_linha(
-            '3. DESPESAS OPERACIONAIS',
-            '(-) Despesas Tributárias',
-            -despesas_trib,
-        )
-        adicionar_linha(
-            '3. DESPESAS OPERACIONAIS',
-            '(-) Despesas Financeiras',
-            -despesas_fin,
-        )
-        adicionar_linha(
-            '3. DESPESAS OPERACIONAIS',
-            '(-) Despesas Bancárias',
-            -despesas_banc,
-        )
-        adicionar_linha(
-            '3. DESPESAS OPERACIONAIS',
-            '(=) RESULTADO OPERACIONAL',
-            resultado_operacional,
-            incluir_resultado=True,
-        )
-        adicionar_linha(
-            '4. RESULTADO FINAL',
-            '(=) RESULTADO OPERACIONAL / LÍQUIDO',
-            resultado_liquido,
-            incluir_resultado=True,
+        linhas.append(
+            (
+                '4. RESULTADO FINAL',
+                '(=) RESULTADO OPERACIONAL / LÍQUIDO',
+                resultado_operacional,
+                resultado_operacional / meses,
+                _perc_receita(resultado_operacional, receita_total),
+                None,
+                '',
+            )
         )
 
-        if prolabores_total:
-            adicionar_linha(
-                'DISTRIBUIÇÃO INTERNA',
-                'Pró-labores dos Sócios (já incluídos em ADM)',
-                prolabores_total,
-                observacao="\n".join(detalhes_prolabore),
+        if valor_prolabore != 0:
+            obs_pro = ''
+            if not df_pro.empty and 'item_nome' in df_pro.columns:
+                grupos = (
+                    df_pro.groupby('item_nome')['valor']
+                    .sum()
+                    .items()
+                )
+                obs_pro = ' | '.join([f"{str(nome)}: {valor:,.2f}" for nome, valor in grupos])
+
+            linhas.append(
+                (
+                    'DISTRIBUIÇÃO DO LUCRO',
+                    'Retiradas/Pró-labore dos Sócios',
+                    valor_prolabore,
+                    valor_prolabore / meses,
+                    _perc_receita(valor_prolabore, receita_total),
+                    _perc_resultado_so_para_retirada(
+                        valor_prolabore, resultado_operacional, habilitar=True
+                    ),
+                    obs_pro,
+                )
             )
 
-        df_dre = pd.DataFrame(linhas)
-        colunas = [
-            'bloco',
-            'linha',
-            'valor_total',
-            'valor_mensal',
-            'percentual_receita_total',
-            'percentual_resultado_operacional',
-            'observacao',
-        ]
-        return df_dre[colunas]
+        resultado_final = resultado_operacional + valor_prolabore
+        linhas.append(
+            (
+                '5. RESULTADO FINAL',
+                '(=) RESULTADO FINANCEIRO / LÍQUIDO',
+                resultado_final,
+                resultado_final / meses,
+                _perc_receita(resultado_final, receita_total),
+                None,
+                '',
+            )
+        )
+
+        df_dre = pd.DataFrame(
+            linhas,
+            columns=[
+                'bloco',
+                'linha',
+                'valor_total',
+                'valor_mensal',
+                'percentual_receita_total',
+                'percentual_resultado_operacional',
+                'observacao',
+            ],
+        )
+        return df_dre
 
     def calcular_margem_contribuicao(
         self,
