@@ -239,7 +239,7 @@
 
     <section class="card" style="margin-top:16px">
       <div class="card-header">
-        <h2 style="margin:0">Top 20 Clientes Contribuintes (Curva ABC)</h2>
+        <h2 style="margin:0">Top 10 Clientes Contribuintes (Curva ABC)</h2>
         <div class="card-actions">
           <button class="btn-sm" data-export="tabTopClientes">⬇️ Exportar CSV</button>
         </div>
@@ -289,40 +289,6 @@
       <div id="tabDRE" class="table-host"></div>
     </section>
 
-    <section class="card" style="margin-top:16px" id="card-margem">
-      <div class="card-header">
-        <h2 style="margin:0">Margem de Contribuição</h2>
-        <div class="card-actions">
-          <span class="badge warn hidden" data-status-sheet="DRE_Margem_Contribuicao">Sem dados</span>
-          <button class="btn-sm" data-export="cardMargem">⬇️ Exportar CSV</button>
-        </div>
-      </div>
-      <div class="grid auto-fit" id="margem-cards">
-        <div class="kpi" id="margem-total">
-          <div class="label">Valor Total</div>
-          <div class="value">—</div>
-          <div class="desc">Margem acumulada</div>
-        </div>
-        <div class="kpi alt" id="margem-mensal">
-          <div class="label">Valor Mensal</div>
-          <div class="value">—</div>
-          <div class="desc">Base nos últimos 10 meses</div>
-        </div>
-        <div class="kpi" id="margem-cliente">
-          <div class="label">Valor por Cliente (mensal)</div>
-          <div class="value">—</div>
-          <div class="desc"><span id="margem-clientes-total" class="pill">— clientes</span></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="card" style="margin-top:16px" id="card-validacoes">
-      <div class="card-header">
-        <h2 style="margin:0">Validações & Confrontos</h2>
-      </div>
-      <div class="validation-list" id="validations-list"></div>
-    </section>
-
   </main>
   <div id="toast"></div>
 
@@ -365,8 +331,7 @@
       'Resultado_Segmento_Com_Peso':['Resultado_Segmento_Com_Peso','Res_Segmento_Com_Peso'],
       'Resumo_Retirada':['Resumo_Retirada'],
       'Top_Despesas':['Top_Despesas'],
-      'DRE_Simplificada':['DRE_Simplificada','DRE_Simples'],
-      'DRE_Margem_Contribuicao':['DRE_Margem_Contribuicao','DRE_Margem_Contrib']
+      'DRE_Simplificada':['DRE_Simplificada','DRE_Simples']
     };
 
     const canonicalSheetName = (name)=>{
@@ -463,8 +428,7 @@
         segc: sheetRows(wb,'Resultado_Segmento_Com_Peso')||[],
         td: sheetRows(wb,'Top_Despesas')||[],
         rr: sheetRows(wb,'Resumo_Retirada')||[],
-        dre: sheetRows(wb,'DRE_Simplificada')||[],
-        mc: sheetRows(wb,'DRE_Margem_Contribuicao')||[]
+        dre: sheetRows(wb,'DRE_Simplificada')||[]
       };
     }
 
@@ -653,15 +617,6 @@
       });
     }
 
-    function rowsMargemContribuicao(rows){
-      return (rows||[]).map(r=>({
-        margem_total: asNum(pick(r,'margem_total','DRE_Margem_Contribuicao')),
-        margem_mensal: asNum(pick(r,'margem_mensal','DRE_Margem_Contribuicao')),
-        clientes_total: asNum(pick(r,'clientes_total','DRE_Margem_Contribuicao')),
-        margem_por_cliente: asNum(pick(r,'margem_por_cliente','DRE_Margem_Contribuicao'))
-      }));
-    }
-
     const state = {
       wb:null,
       datasets:{},
@@ -686,8 +641,7 @@
       'Ticket_Regime_Atividade',
       'Ticket_Clientes',
       'Resultado_Segmento_Com_Peso',
-      'Top_Despesas',
-      'DRE_Margem_Contribuicao'
+      'Top_Despesas'
     ];
 
     const showLoading = (show)=>{
@@ -891,7 +845,9 @@
       const segmentoRows = state.datasets.resultadoSegmentoComPeso||[];
 
       if(state.resultadoView === 'regime'){
-        const regimesData = applySearch(regimeRows);
+        const regimesData = applySearch(regimeRows)
+          .slice()
+          .sort((a,b)=> asNum(b.margem) - asNum(a.margem));
         tableFromData('tabResultado',[
           {key:'regime',label:'Regime'},
           {key:'clientes',label:'Clientes',right:true,format:v=>INT.format(asNum(v))},
@@ -917,7 +873,9 @@
         statusBadge('Resultado_Segmento_Com_Peso', segmentoRows.length>0);
       }else{
         const filtered = segmentoRows.filter(row=> !state.filters.segmentRegime || row.regime===state.filters.segmentRegime);
-        const finalRows = applySearch(filtered);
+        const finalRows = applySearch(filtered)
+          .slice()
+          .sort((a,b)=> asNum(b.margem) - asNum(a.margem));
         tableFromData('tabResultado',[
           {key:'regime',label:'Regime'},
           {key:'atividade',label:'Atividade'},
@@ -978,7 +936,7 @@
           receita: asNum(c.receita_mensal)
         }))
         .sort((a,b)=> b.receita - a.receita)
-        .slice(0,20);
+        .slice(0,10);
 
       const totalReceita = sum(clientes, c=> c.receita);
       let acumulado = 0;
@@ -1054,7 +1012,9 @@
             showPlaceholder('Ticket_Regime');
             return;
           }
-          const rowsReg = applySearch(dataset);
+          const rowsReg = applySearch(dataset)
+            .slice()
+            .sort((a,b)=> (asNum(b.perc_receita)||0) - (asNum(a.perc_receita)||0));
           const options = {
             onRowClick:(row)=>{
               state.filters.ticketRegime = row?.regime || null;
@@ -1248,143 +1208,6 @@
       statusBadge('DRE_Simplificada', raw.length>0);
     }
 
-    function renderMargem(){
-      const totalEl = document.querySelector('#margem-total .value');
-      const mensalEl = document.querySelector('#margem-mensal .value');
-      const clienteEl = document.querySelector('#margem-cliente .value');
-      const clientesBadge = document.getElementById('margem-clientes-total');
-      if(!totalEl || !mensalEl || !clienteEl || !clientesBadge) return;
-
-      const base = state.datasets.margemContribuicao || [];
-      const margemColumns = [
-        {key:'margem_total',label:'Margem Total',exportType:'currency'},
-        {key:'margem_mensal',label:'Margem Mensal',exportType:'currency'},
-        {key:'clientes_total',label:'Clientes Totais',exportType:'number'},
-        {key:'margem_por_cliente',label:'Margem por Cliente (mensal)',exportType:'currency'}
-      ];
-      if(!base.length){
-        totalEl.textContent = '—';
-        mensalEl.textContent = '—';
-        clienteEl.textContent = '—';
-        clientesBadge.textContent = '— clientes';
-        registerTableData('cardMargem', margemColumns, [], 'DRE_Margem_Contribuicao');
-        statusBadge('DRE_Margem_Contribuicao', false);
-        return;
-      }
-
-      const registro = base[0];
-      const total = asNum(registro.margem_total);
-      const mensal = asNum(registro.margem_mensal);
-      const clientesRaw = asNum(registro.clientes_total);
-      const clientes = Math.max(0, Math.floor(clientesRaw));
-      const porCliente = asNum(registro.margem_por_cliente);
-
-      totalEl.textContent = BRL.format(total);
-      mensalEl.textContent = BRL.format(mensal);
-      clienteEl.textContent = BRL.format(porCliente);
-      clientesBadge.textContent = `${INT.format(clientes)} clientes`;
-      registerTableData('cardMargem', margemColumns, [{
-        margem_total: total,
-        margem_mensal: mensal,
-        clientes_total: clientesRaw,
-        margem_por_cliente: porCliente
-      }], 'DRE_Margem_Contribuicao');
-      statusBadge('DRE_Margem_Contribuicao', true);
-    }
-
-    function renderValidations(){
-      const list=document.getElementById('validations-list');
-      const checks=[];
-      const ticketReg=state.datasets.ticketRegime||[];
-      ticketReg.forEach(row=>{
-        const receita=asNum(row.receita);
-        const reconstruida=asNum(row.ticketMedio)*asNum(row.clientes);
-        const diff=percentDiff(receita,reconstruida);
-        const abs=Math.abs(diff);
-        let status='ok';
-        if(abs>0.03) status='error';
-        else if(abs>0.01) status='warn';
-        checks.push({
-          status,
-          title:`Ticket × Receita — ${row.regime||'Regime'}`,
-          diff,
-          detail:`Receita informada: ${BRL.format(receita)} | Receita reconstruída: ${BRL.format(reconstruida)} | Desvio: ${PCT.format(diff)}`
-        });
-      });
-
-      if(ticketReg.length){
-        const somaReg= sum(ticketReg,r=> r.receita);
-        const geralRaw = state.S?.g?.[0] || {};
-        const geral=asNum(pick(geralRaw,'receita_mensal','Ticket_Geral')) || state.kpis?.receitaMensal || 0;
-        const diff=percentDiff(geral,somaReg);
-        let status='ok';
-        if(Math.abs(diff)>0.03) status='error';
-        else if(Math.abs(diff)>0.01) status='warn';
-        checks.push({
-          status,
-          title:'Receita Total Ticket Regime × Ticket Geral',
-          diff,
-          detail:`Ticket Geral: ${BRL.format(geral)} | Soma Regimes: ${BRL.format(somaReg)} | Desvio: ${PCT.format(diff)}`
-        });
-      }
-
-      const totalCom = sum(state.datasets.resultadoRegimeComPeso||[], r=> r.resultado);
-      const diffCom = percentDiff(state.kpis?.resultadoTotal||0, totalCom);
-      checks.push({
-        status:Math.abs(diffCom)<=0.03?'ok':'warn',
-        title:'Somatório Resultado Consolidado',
-        diff:diffCom,
-        detail:`KPI: ${BRL.format(state.kpis?.resultadoTotal||0)} | Soma Regimes: ${BRL.format(totalCom)}`
-      });
-
-      const segmentosRows = state.datasets.resultadoSegmentoComPeso||[];
-      if(segmentosRows.length){
-        const segmentos = new Map();
-        segmentosRows.forEach(row=>{
-          const key=String(row.regime||'').toLowerCase();
-          segmentos.set(key,(segmentos.get(key)||0)+asNum(row.resultado));
-        });
-        const divergencias=[];
-        (state.datasets.resultadoRegimeComPeso||[]).forEach(row=>{
-          const somaSeg = segmentos.get(String(row.regime||'').toLowerCase())||0;
-          const diff=percentDiff(asNum(row.resultado), somaSeg);
-          if(Math.abs(diff)>0.01){
-            divergencias.push(`${row.regime||'Regime'} → ${PCT.format(diff)} (Regime: ${BRL.format(asNum(row.resultado))} | Segmentos: ${BRL.format(somaSeg)})`);
-          }
-        });
-        checks.push({
-          status:divergencias.length?'warn':'ok',
-          title:'Segmento (Regime + Atividade) × Regime consolidado',
-          diff:0,
-          detail:divergencias.length?divergencias.join('\n'):'Sem divergências relevantes (≤1%)'
-        });
-      }
-
-      list.innerHTML='';
-      if(!checks.length){
-        list.innerHTML='<div class="empty-message">Sem validações disponíveis.</div>';
-        return;
-      }
-
-      checks.forEach((check,idx)=>{
-        const row=document.createElement('div');
-        row.className=`validation-row ${check.status}`;
-        const icon = check.status==='ok'?'✅':(check.status==='warn'?'⚠️':'❌');
-        const badgeClass = check.status==='ok'?'badge ok':(check.status==='warn'?'badge warn':'badge error');
-        const diffLabel = `${check.diff>=0?'+':''}${PCT.format(check.diff||0)}`;
-        row.innerHTML=`<div class="header"><div class="header-left">${icon} ${check.title}</div><span class="${badgeClass}">${diffLabel}</span></div>`;
-        const details=document.createElement('details');
-        const summary=document.createElement('summary');
-        summary.textContent='ver cálculo';
-        const pre=document.createElement('div');
-        pre.textContent=check.detail;
-        details.appendChild(summary);
-        details.appendChild(pre);
-        row.appendChild(details);
-        list.appendChild(row);
-      });
-    }
-
     function renderAll(){
       renderHero();
       renderResultado();
@@ -1393,8 +1216,6 @@
       renderTopClientes();
       renderTopDespesas();
       renderDRE();
-      renderMargem();
-      renderValidations();
     }
 
     function resolveColumnType(metaSheet, column){
@@ -1516,7 +1337,6 @@
         const tkRegAtividade = rowsTicketRegimeAtividade(S.tra);
         const tkClientes = rowsTicketClientes(S.tc);
         const topG = rowsTopDespesas(S.td);
-        const margem = rowsMargemContribuicao(S.mc);
 
         state.datasets={
           resultadoRegimeComPeso:rrCom,
@@ -1525,7 +1345,6 @@
           ticketRegimeAtividade:tkRegAtividade,
           ticketClientes:tkClientes,
           topDespesas:topG,
-          margemContribuicao:margem,
           dre:S.dre
         };
 
