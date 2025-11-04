@@ -1,0 +1,24 @@
+{
+  "acessorias": {
+    "base_url": "https://api.acessorias.com",
+    "page_size": 20,
+    "rate_budget": 90,
+    "statuses": [],
+    "dt_last_dh": null
+  },
+  "deliveries": {
+    "enabled": true,
+    "identificador": "ListAll",
+    "days_back": 120,
+    "days_forward": 0,
+    "use_dt_last_dh": true
+  },
+  "deadlines": {
+    "reinf_day": 15,
+    "efd_contrib_day": 20,
+    "risk_window_days": 5
+  },
+  "imap": {
+    "search_days": 180
+  }
+}
